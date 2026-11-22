@@ -30,7 +30,7 @@
         >
             <div class="staff-card-head">
                 <div class="staff-identity">
-                    <span class="avatar"><?= e(mb_strtoupper(mb_substr($dsr['name'], 0, 2))) ?></span>
+                    <span class="avatar avatar-lg"><?php if ($dsr['photo']): ?><img src="<?= e($dsr['photo']) ?>" alt=""><?php else: ?><?= e(mb_strtoupper(mb_substr($dsr['name'], 0, 2))) ?><?php endif; ?></span>
                     <div>
                         <h3 class="staff-name"><?= e($dsr['name']) ?></h3>
                         <span class="muted small tabular">ডেলিভারিম্যান (DSR) · <?= Bn::num((int) $dsr['trips']) ?>টি ট্রিপ</span>
@@ -52,6 +52,7 @@
 
             <div class="card-actions">
                 <button type="button" class="btn btn-secondary btn-xs" data-dsr-edit>সম্পাদনা</button>
+                <button type="button" class="btn btn-secondary btn-xs" data-dsr-photo>ছবি</button>
                 <button type="button" class="btn btn-secondary btn-xs" data-dsr-reset>পাসওয়ার্ড রিসেট</button>
                 <button type="button" class="btn btn-secondary btn-xs" data-dsr-status><?= $dsr['status'] === 'Active' ? 'নিষ্ক্রিয় করুন' : 'সক্রিয় করুন' ?></button>
                 <button type="button" class="btn btn-danger-soft btn-xs" data-dsr-delete>মুছুন</button>
@@ -59,6 +60,7 @@
         </article>
     <?php endforeach; ?>
 </section>
+<input type="file" id="dsrPhotoInput" accept="image/jpeg,image/png,image/webp" hidden>
 
 <div class="empty-state" id="dsrEmpty" <?= $deliveryMen ? 'hidden' : '' ?>>
     <p><?= $deliveryMen ? 'খোঁজের সাথে কোনো ডেলিভারিম্যান মিলছে না।' : 'এখনো কোনো ডেলিভারিম্যান নেই। প্রথম DSR যোগ করুন।' ?></p>

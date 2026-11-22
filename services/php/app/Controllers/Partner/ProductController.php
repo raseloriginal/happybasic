@@ -73,6 +73,7 @@ final class ProductController extends PartnerController
             'unit_type' => 'required|string|max:30',
             'quantity_per_unit' => 'required|integer',
             'profit_margin' => 'required|numeric',
+            'mrp' => 'nullable|numeric',
         ], ['company_id.required' => 'অনুগ্রহ করে কোম্পানি নির্বাচন করুন।', 'category_id.required' => 'অনুগ্রহ করে ক্যাটাগরি নির্বাচন করুন।']);
 
         $qpu = (int) $data['quantity_per_unit'];
@@ -84,6 +85,11 @@ final class ProductController extends PartnerController
             throw new HttpError('ডিলার মার্জিন ০ থেকে ৯৯৯%-এর মধ্যে হতে হবে।', 422, ['profit_margin' => ['সঠিক মার্জিন দিন।']]);
         }
 
+        $mrp = ($data['mrp'] ?? '') === '' || $data['mrp'] === null ? null : round((float) $data['mrp'], 2);
+        if ($mrp !== null && ($mrp <= 0 || $mrp > 9999999)) {
+            throw new HttpError('MRP সঠিক দিন (প্রতি পিস)।', 422, ['mrp' => ['সঠিক MRP দিন।']]);
+        }
+
         return [
             'name' => (string) $data['name'],
             'sku' => $data['sku'] ?: null,
@@ -92,6 +98,7 @@ final class ProductController extends PartnerController
             'unit_type' => (string) $data['unit_type'],
             'qty_per_unit' => $qpu,
             'dealer_margin' => round($margin, 2),
+            'mrp' => $mrp,
         ];
     }
 

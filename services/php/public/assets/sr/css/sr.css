@@ -2423,3 +2423,23 @@ a { color: inherit; }
     #orderDetailModal .modal-panel { position: static !important; max-height: none !important; height: auto !important; transform: none !important; border: 0 !important; }
     .shop-memo-sheet { border: 0 !important; box-shadow: none !important; padding: 0 !important; }
 }
+
+/* Own-location pin: round profile photo with a pointer tail */
+.photo-pin-icon { background: none; border: 0; }
+.photo-pin { position: relative; width: 46px; height: 46px; }
+.photo-pin img { width: 46px; height: 46px; border-radius: 999px; object-fit: cover; display: block; border: 3px solid #fff; background: #e2e8f0; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.35); }
+.photo-pin::after { content: ""; position: absolute; left: 50%; top: 100%; margin: -4px 0 0 -8px; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 11px solid #fff; filter: drop-shadow(0 2px 2px rgba(15, 23, 42, 0.25)); }
+
+.profile-photo-btn { position: relative; overflow: hidden; cursor: pointer; }
+.profile-photo-btn img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+.profile-photo-cam { position: absolute; right: -2px; bottom: -2px; font-size: 11px; line-height: 1; background: #fff; border-radius: 999px; padding: 2px; }
+
+/* Own-location pin: round profile photo with a pointer tail */
+.photo-pin-icon { background: none; border: 0; }
+.photo-pin { position: relative; width: 46px; height: 46px; }
+.photo-pin img { width: 46px; height: 46px; border-radius: 999px; object-fit: cover; display: block; border: 3px solid #fff; background: #e2e8f0; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.35); }
+.photo-pin::after { content: ""; position: absolute; left: 50%; top: 100%; margin: -4px 0 0 -8px; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 11px solid #fff; filter: drop-shadow(0 2px 2px rgba(15, 23, 42, 0.25)); }
+
+.profile-photo-btn { position: relative; overflow: hidden; cursor: pointer; }
+.profile-photo-btn img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+.profile-photo-cam { position: absolute; right: -2px; bottom: -2px; font-size: 11px; line-height: 1; background: #fff; border-radius: 999px; padding: 2px; }

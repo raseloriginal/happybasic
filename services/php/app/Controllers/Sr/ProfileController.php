@@ -54,6 +54,19 @@ final class ProfileController extends Controller
         });
     }
 
+    /** SR sets the photo shown on their own map pin. */
+    public function photo(Request $request): Response
+    {
+        return $this->action(function () use ($request): array {
+            $sr = SrAuthMiddleware::sr();
+            $path = \App\Support\ImageUpload::store($request, 'photo', 'sr', 160);
+            Database::getInstance()->execute('UPDATE salesmen SET photo_path = ? WHERE id = ?', [$path, $sr['id']]);
+            ActivityLog::record('Updated', 'Profile', 'SR updated own photo', $sr['user_id']);
+
+            return ['message' => 'ছবি সংরক্ষিত হয়েছে।', 'photo' => url($path)];
+        });
+    }
+
     /** SR changes their own password; other devices are signed out. */
     public function password(Request $request): Response
     {

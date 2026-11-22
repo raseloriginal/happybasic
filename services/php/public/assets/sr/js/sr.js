@@ -31,11 +31,11 @@
                 credentials: 'same-origin',
                 headers: {
                     Accept: 'application/json',
-                    'Content-Type': 'application/json',
+                    ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
                     'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': csrfToken(),
                 },
-                body: body === undefined ? undefined : JSON.stringify(body),
+                body: body === undefined ? undefined : (body instanceof FormData ? body : JSON.stringify(body)),
             });
         } catch {
             throw new Error('নেটওয়ার্ক সমস্যা। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।');
@@ -1085,12 +1085,20 @@
                 }).addTo(leafletLayerGroup);
 
                 // SR current location pin
-                const srIcon = window.L.divIcon({
-                    className: 'retailer-pin-icon',
-                    html: `<div class="sr-pin-dot" title="আপনার অবস্থান (৫০ মিটার)"></div>`,
-                    iconSize: [15, 15],
-                    iconAnchor: [7, 7],
-                });
+                const srPhoto = app.dataset.srPhoto || '';
+                const srIcon = srPhoto
+                    ? window.L.divIcon({
+                        className: 'photo-pin-icon',
+                        html: `<div class="photo-pin" title="আপনার অবস্থান (৫০ মিটার)"><img src="${escapeHtml(srPhoto)}" alt=""></div>`,
+                        iconSize: [46, 56],
+                        iconAnchor: [23, 56],
+                    })
+                    : window.L.divIcon({
+                        className: 'retailer-pin-icon',
+                        html: `<div class="sr-pin-dot" title="আপনার অবস্থান (৫০ মিটার)"></div>`,
+                        iconSize: [15, 15],
+                        iconAnchor: [7, 7],
+                    });
                 window.L.marker([srLoc.lat, srLoc.lng], { icon: srIcon, zIndexOffset: 200 })
                     .bindPopup('<strong>আপনার অবস্থান (SR)</strong><br><span style="font-size:12px;color:#64748b">৫০ মিটার সক্রিয় এলাকা</span>')
                     .addTo(leafletLayerGroup);
@@ -2894,6 +2902,20 @@
             nextBtn?.addEventListener('click', () => loadProfDate(shiftIso(currentDate, 1)));
             dateInput?.addEventListener('change', () => { if (dateInput.value) loadProfDate(dateInput.value); });
         }
+
+        const photoInput = document.getElementById('srPhotoInput');
+        photoInput?.addEventListener('change', async () => {
+            const file = photoInput.files[0];
+            if (!file) return;
+            const fd = new FormData();
+            fd.append('photo', file);
+            try {
+                await srApi('POST', '/sr/profile/photo', fd);
+                window.location.reload();
+            } catch (err) {
+                showToast(err.message);
+            }
+        });
 
         const form = document.getElementById('srPasswordForm');
         if (!form) return;

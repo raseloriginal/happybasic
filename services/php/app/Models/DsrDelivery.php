@@ -694,8 +694,9 @@ final class DsrDelivery
                     $p = $line['product'];
                     $pcs = $line['pcs'];
                     $db->execute(
-                        'INSERT INTO order_items (order_id, product_id, ordered_pcs, delivered_pcs, base_rate_pc, sr_rate_pc) VALUES (?, ?, ?, ?, ?, ?)',
-                        [$oid, $p['id'], $pcs, $pcs, $p['base_rate'], $p['base_rate']]
+                        'INSERT INTO order_items (order_id, product_id, ordered_pcs, delivered_pcs, base_rate_pc, sr_rate_pc, mrp_pc)
+                         VALUES (?, ?, ?, ?, ?, ?, (SELECT mrp FROM products WHERE id = ?))',
+                        [$oid, $p['id'], $pcs, $pcs, $p['base_rate'], $p['base_rate'], $p['id']]
                     );
                     $receiptItems[] = [
                         'name' => $p['name'],

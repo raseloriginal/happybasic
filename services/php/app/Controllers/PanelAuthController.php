@@ -21,7 +21,27 @@ final class PanelAuthController extends Controller
         'partner' => ['role' => 'partner', 'title' => 'পার্টনার প্যানেল', 'home' => '/partner/dashboard'],
         'sr' => ['role' => 'sr', 'title' => 'SR অ্যাপ', 'home' => '/sr/order'],
         'dsr' => ['role' => 'dsr', 'title' => 'DSR ডেলিভারি', 'home' => '/dsr/dashboard'],
+        'retailer' => ['role' => 'retailer', 'title' => 'দোকান প্যানেল', 'home' => '/retailer'],
     ];
+
+    public function showRetailer(): Response
+    {
+        if (PanelAuth::user('retailer', 'retailer') !== null) {
+            return $this->redirect('/retailer');
+        }
+
+        return $this->view('retailer.login', ['action' => url('/retailer/login'), 'home' => url('/retailer')]);
+    }
+
+    public function retailerLogin(Request $request): Response
+    {
+        return $this->login($request, 'retailer');
+    }
+
+    public function retailerLogout(): Response
+    {
+        return $this->logout('retailer');
+    }
 
     public function showPartner(): Response
     {

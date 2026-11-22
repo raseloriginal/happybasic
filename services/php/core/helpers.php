@@ -114,7 +114,12 @@ if (!function_exists('url')) {
 if (!function_exists('asset')) {
     function asset(string $path): string
     {
-        return url('assets/' . ltrim($path, '/'));
+        $rel = 'assets/' . ltrim($path, '/');
+        $file = base_path('public/' . $rel);
+        // Cache-bust with the file's modified time so edited JS/CSS is never served stale.
+        $v = is_file($file) ? '?v=' . filemtime($file) : '';
+
+        return url($rel) . $v;
     }
 }
 

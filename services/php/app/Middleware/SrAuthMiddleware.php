@@ -20,7 +20,7 @@ final class SrAuthMiddleware
     {
         $user = PanelAuth::user('sr', 'sr');
         $sr = $user === null ? null : Database::getInstance()->fetch(
-            "SELECT s.id, s.partner_id, s.company_id, s.code, s.name, s.phone, s.area, c.name AS company, p.name AS partner
+            "SELECT s.id, s.partner_id, s.company_id, s.code, s.name, s.phone, s.area, s.photo_path, c.name AS company, p.name AS partner
              FROM salesmen s
              JOIN partners p ON p.id = s.partner_id AND p.status = 'active' AND p.deleted_at IS NULL
              JOIN companies c ON c.id = s.company_id AND c.status = 'active' AND c.deleted_at IS NULL

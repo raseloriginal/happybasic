@@ -38,6 +38,18 @@ final class DeliveryManController extends PartnerController
         });
     }
 
+    public function photo(Request $request, int $id): Response
+    {
+        return $this->action(function () use ($request, $id): array {
+            DeliveryMan::findOrFail($this->partnerId(), $id);
+            $path = \App\Support\ImageUpload::store($request, 'photo', 'dsr', 160);
+
+            $dsr = DeliveryMan::present(DeliveryMan::setPhoto($this->partnerId(), $id, $path));
+            $this->log('Updated', 'DSR', "Partner updated photo of DSR \"{$dsr['name']}\"");
+            return ['message' => "\"{$dsr['name']}\"-এর ছবি সংরক্ষিত হয়েছে।", 'dsr' => $dsr];
+        });
+    }
+
     public function status(Request $request, int $id): Response
     {
         return $this->action(function () use ($request, $id): array {

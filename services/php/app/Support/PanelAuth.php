@@ -52,6 +52,15 @@ final class PanelAuth
         }
 
         $phone = Phone::normalize($phoneInput);
+        if ($role === 'retailer') {
+            // Retailers sign in with their shop phone (any format) and the same number as password;
+            // the account is created on first sign-in.
+            $phone = \App\Models\Retailer::loginPhone($phoneInput);
+            $password = \App\Models\Retailer::phoneKey($password);
+            if ($phone !== null) {
+                \App\Models\Retailer::ensureAccount($phone);
+            }
+        }
         $user = $phone === null ? null : Database::getInstance()->fetch(
             'SELECT * FROM users WHERE phone = ? AND role = ? AND deleted_at IS NULL LIMIT 1',
             [$phone, $role]

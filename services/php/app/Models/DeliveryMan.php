@@ -40,6 +40,7 @@ final class DeliveryMan
             'phone' => $r['phone'],
             'number' => Phone::format($r['phone']),
             'salary' => (float) $r['salary'],
+            'photo' => !empty($r['photo_path']) ? url((string) $r['photo_path']) : null,
             'status' => Format::status($r['status']),
             'trips' => (int) ($r['trips'] ?? 0),
             'open_trips' => (int) ($r['open_trips'] ?? 0),
@@ -85,6 +86,14 @@ final class DeliveryMan
 
             return self::findOrFail($partnerId, $id);
         });
+    }
+
+    public static function setPhoto(int $partnerId, int $id, string $path): array
+    {
+        self::findOrFail($partnerId, $id);
+        self::db()->execute('UPDATE delivery_men SET photo_path = ? WHERE id = ?', [$path, $id]);
+
+        return self::findOrFail($partnerId, $id);
     }
 
     public static function setStatus(int $partnerId, int $id, string $status): array

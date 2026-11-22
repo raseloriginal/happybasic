@@ -6,6 +6,7 @@
     id="orderApp"
     data-fullscreen-map="1"
     data-sr-name="<?= e($currentSr['name'] ?? '') ?>"
+    data-sr-photo="<?= e(!empty($currentSr['photo_path']) ? url($currentSr['photo_path']) : '') ?>"
     data-sr-company="<?= e($currentSr['company'] ?? '') ?>"
     data-sr-location="<?= e(json_encode($srLocation, JSON_UNESCAPED_UNICODE)) ?>"
     data-retailers="<?= e(json_encode($retailers, JSON_UNESCAPED_UNICODE)) ?>"

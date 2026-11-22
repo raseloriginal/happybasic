@@ -24,6 +24,17 @@
             if (emptyEl) emptyEl.hidden = visible > 0;
         });
 
+        const photoInput = document.getElementById('dsrPhotoInput');
+        let photoTarget = null;
+        photoInput?.addEventListener('change', () => {
+            const file = photoInput.files[0];
+            if (!file || !photoTarget) return;
+            const fd = new FormData();
+            fd.append('photo', file);
+            const { dsr, btn } = photoTarget;
+            H.submitAction(btn, null, 'আপলোড হচ্ছে…', () => H.api('POST', H.url(`/partner/delivery-men/${dsr.id}/photo`), fd));
+        });
+
         function openForm(dsr) {
             form.reset();
             H.formError(form, '');
@@ -47,6 +58,10 @@
 
             if (e.target.closest('[data-dsr-edit]')) {
                 openForm(dsr);
+            } else if (e.target.closest('[data-dsr-photo]')) {
+                photoTarget = { dsr, btn: e.target.closest('button') };
+                photoInput.value = '';
+                photoInput.click();
             } else if (e.target.closest('[data-dsr-reset]')) {
                 pwForm.reset();
                 H.formError(pwForm, '');

@@ -36,5 +36,6 @@ $router->group(['prefix' => 'sr', 'middleware' => [CsrfMiddleware::class]], stat
         $router->get('/profile', [ProfileController::class, 'index'])->name('sr.profile');
         $router->get('/profile/day', [ProfileController::class, 'day']);
         $router->post('/profile/password', [ProfileController::class, 'password']);
+        $router->post('/profile/photo', [ProfileController::class, 'photo']);
     });
 });

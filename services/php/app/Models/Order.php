@@ -159,8 +159,9 @@ final class Order
 
             foreach ($lines as $l) {
                 $db->execute(
-                    'INSERT INTO order_items (order_id, product_id, ordered_pcs, base_rate_pc, sr_rate_pc, order_oc) VALUES (?, ?, ?, ?, ?, ?)',
-                    [$id, $l['product_id'], $l['pcs'], $l['base'], $l['rate'], $l['oc']]
+                    'INSERT INTO order_items (order_id, product_id, ordered_pcs, base_rate_pc, sr_rate_pc, mrp_pc, order_oc)
+                     VALUES (?, ?, ?, ?, ?, (SELECT mrp FROM products WHERE id = ?), ?)',
+                    [$id, $l['product_id'], $l['pcs'], $l['base'], $l['rate'], $l['product_id'], $l['oc']]
                 );
             }
 

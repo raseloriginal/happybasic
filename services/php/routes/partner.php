@@ -63,6 +63,7 @@ $router->group(['prefix' => 'partner', 'middleware' => [CsrfMiddleware::class]],
         $router->put('/delivery-men/{id:\d+}', [DeliveryManController::class, 'update']);
         $router->patch('/delivery-men/{id:\d+}/status', [DeliveryManController::class, 'status']);
         $router->post('/delivery-men/{id:\d+}/password', [DeliveryManController::class, 'resetPassword']);
+        $router->post('/delivery-men/{id:\d+}/photo', [DeliveryManController::class, 'photo']);
         $router->delete('/delivery-men/{id:\d+}', [DeliveryManController::class, 'destroy']);
     });
 });

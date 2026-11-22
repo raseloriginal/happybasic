@@ -808,13 +808,8 @@
 
         let tripSrIds = (trip?.sr_ids || []).map(Number);
         // Retailers created by this trip's SRs that have no order on the trip (no radius limit)
-        function otherSrRetailers(items) {
-            const ordered = new Set(items.map((s) => String(s.retailer_id ?? s.id)));
-            return retailers.filter((r) => tripSrIds.includes(Number(r.sr_id)) && !ordered.has(String(r.id)) && (Number(r.lat) || Number(r.lng)));
-        }
         function allPinPoints(items) {
             const pts = items.filter((s) => Number(s.lat) || Number(s.lng)).map((s) => [Number(s.lat), Number(s.lng)]);
-            otherSrRetailers(items).forEach((r) => pts.push([Number(r.lat), Number(r.lng)]));
             if (pts.length === 0 || dsrStore.gpsFix) pts.push([dsrLoc.lat, dsrLoc.lng]);
             return pts;
         }
@@ -830,7 +825,10 @@
         function renderMapMarkers(items) {
             if (!hasLeaflet || !activeDeliveryMap || !leafletLayerGroup) return;
             leafletLayerGroup.clearLayers();
-            const dsrIcon = window.L.divIcon({ className: 'retailer-pin-icon', html: '<div class="dsr-pin-dot" title="আপনার অবস্থান (DSR)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+            const dsrPhoto = app.dataset.dsrPhoto || '';
+            const dsrIcon = dsrPhoto
+                ? window.L.divIcon({ className: 'photo-pin-icon', html: `<div class="photo-pin" title="আপনার অবস্থান (DSR)"><img src="${escapeHtml(dsrPhoto)}" alt=""></div>`, iconSize: [46, 56], iconAnchor: [23, 56] })
+                : window.L.divIcon({ className: 'retailer-pin-icon', html: '<div class="dsr-pin-dot" title="আপনার অবস্থান (DSR)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
             window.L.marker([dsrLoc.lat, dsrLoc.lng], { icon: dsrIcon, zIndexOffset: 300 }).addTo(leafletLayerGroup);
             items.forEach((s) => {
                 if (!Number(s.lat) && !Number(s.lng)) return;
@@ -841,15 +839,6 @@
                     iconAnchor: [0, 0],
                 });
                 window.L.marker([Number(s.lat), Number(s.lng)], { icon, zIndexOffset: 200 }).addTo(leafletLayerGroup).on('click', () => openStop(s.id));
-            });
-            otherSrRetailers(items).forEach((r) => {
-                const icon = window.L.divIcon({
-                    className: 'retailer-pin-icon',
-                    html: `<div class="retailer-pin-wrap is-other" title="${escapeHtml(`${r.name} · অর্ডার নেই (রেডি সেলের জন্য ট্যাপ করুন)`)}"><span class="retailer-pin-label"><span class="pin-status-dot is-other"></span><span>${escapeHtml(r.name)}</span></span><span class="retailer-pin-dot"></span></div>`,
-                    iconSize: [0, 0],
-                    iconAnchor: [0, 0],
-                });
-                window.L.marker([Number(r.lat), Number(r.lng)], { icon }).addTo(leafletLayerGroup).on('click', () => openReadySaleFor(r.id));
             });
             if (!fittedOnce) {
                 fittedOnce = true;
@@ -1504,7 +1493,7 @@
             const n = payNumbers();
             try {
                 await saveStop(n.paid, $('confirmPayBtn'));
-                closeModal('paymentModal');
+                closeAllModals({ syncHistory: true });
                 showToast(`সংরক্ষিত: পরিশোধ ${formatBdt(n.paid)}${n.due > 0 ? `, বকেয়া ${formatBdt(n.due)}` : ''}${n.oldCollected > 0 ? ` (আগের বকেয়া ${formatBdt(n.oldCollected)})` : ''}`);
             } catch (err) {
                 $('payStatusHint').textContent = err.message;
@@ -1810,12 +1799,15 @@
             }).addTo(rsRetLayer);
 
             // DSR GPS dot
-            const srIcon = window.L.divIcon({
-                className: 'retailer-pin-icon',
-                html: '<div class="sr-pin-dot" title="আপনার অবস্থান (১০০ মি.)"></div>',
-                iconSize: [14, 14],
-                iconAnchor: [7, 7],
-            });
+            const rsPhoto = app.dataset.dsrPhoto || '';
+            const srIcon = rsPhoto
+                ? window.L.divIcon({ className: 'photo-pin-icon', html: `<div class="photo-pin" title="আপনার অবস্থান (১০০ মি.)"><img src="${escapeHtml(rsPhoto)}" alt=""></div>`, iconSize: [46, 56], iconAnchor: [23, 56] })
+                : window.L.divIcon({
+                    className: 'retailer-pin-icon',
+                    html: '<div class="sr-pin-dot" title="আপনার অবস্থান (১০০ মি.)"></div>',
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7],
+                });
             window.L.marker([dsrLoc.lat, dsrLoc.lng], { icon: srIcon, zIndexOffset: 300 }).addTo(rsRetLayer);
 
             const coords = [];

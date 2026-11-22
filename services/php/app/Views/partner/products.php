@@ -176,6 +176,10 @@
                         <input id="prod_profit_margin" name="profit_margin" type="number" min="0" step="0.01" placeholder="যেমন: 8.5" required>
                     </div>
                     <div class="form-group">
+                        <label for="prod_mrp">MRP (প্রতি পিস)</label>
+                        <input id="prod_mrp" name="mrp" type="number" min="0" step="0.01" placeholder="যেমন: ২৫">
+                    </div>
+                    <div class="form-group">
                         <label for="prod_sku">SKU / কোড</label>
                         <input id="prod_sku" name="sku" type="text" maxlength="50" placeholder="ঐচ্ছিক">
                     </div>

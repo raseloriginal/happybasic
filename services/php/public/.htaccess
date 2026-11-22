@@ -5,3 +5,12 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^ index.php [L,QSA]
 </IfModule>
+
+# Profile photos get a random file name per upload, so browsers can keep them for a year without re-requesting.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(jpe?g|png|webp)$">
+        <If "%{REQUEST_URI} =~ m#/uploads/#">
+            Header set Cache-Control "public, max-age=31536000, immutable"
+        </If>
+    </FilesMatch>
+</IfModule>

@@ -21,7 +21,11 @@ $netOc = (float) $dsStats['oc'];
     <!-- Cobalt Header Banner -->
     <header class="sr-dash-hero sr-prof-hero">
         <div class="sr-prof-hero-row">
-            <span class="profile-initials-cobalt" aria-hidden="true"><?= e($profile['initials']) ?></span>
+            <label class="profile-initials-cobalt profile-photo-btn" title="ছবি পরিবর্তন করুন">
+                <?php if (!empty($currentSr['photo_path'])): ?><img src="<?= e(url($currentSr['photo_path'])) ?>" alt=""><?php else: ?><?= e($profile['initials']) ?><?php endif; ?>
+                <input type="file" id="srPhotoInput" accept="image/jpeg,image/png,image/webp" hidden>
+                <span class="profile-photo-cam" aria-hidden="true">📷</span>
+            </label>
             <div class="profile-hero-info">
                 <div class="profile-name-row">
                     <h1 class="profile-name"><?= e($profile['name']) ?></h1>

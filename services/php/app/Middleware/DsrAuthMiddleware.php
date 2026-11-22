@@ -20,7 +20,7 @@ final class DsrAuthMiddleware
     {
         $user = PanelAuth::user('dsr', 'dsr');
         $dsr = $user === null ? null : Database::getInstance()->fetch(
-            "SELECT dm.id, dm.partner_id, dm.code, dm.name, dm.phone, p.name AS partner
+            "SELECT dm.id, dm.partner_id, dm.code, dm.name, dm.phone, dm.photo_path, p.name AS partner
              FROM delivery_men dm
              JOIN partners p ON p.id = dm.partner_id AND p.status = 'active' AND p.deleted_at IS NULL
              WHERE dm.user_id = ? AND dm.status = 'active' AND dm.deleted_at IS NULL",

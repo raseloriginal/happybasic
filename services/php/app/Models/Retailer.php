@@ -103,6 +103,41 @@ final class Retailer
         return $row;
     }
 
+    /**
+     * Retailer panel login = phone + password (the phone itself). Creates the account the first time an active
+     * shop with this phone signs in; does nothing when the phone belongs to no shop or already has an account.
+     */
+    /** Comparable form of a phone typed in any format: valid BD numbers → 01XXXXXXXXX, otherwise digits only. */
+    public static function phoneKey(string $input): string
+    {
+        return Phone::normalize($input) ?? (preg_replace('/\D+/', '', $input) ?? '');
+    }
+
+    /** The phone exactly as stored on an active shop that matches what the retailer typed (any format), or null. */
+    public static function loginPhone(string $input): ?string
+    {
+        $key = self::phoneKey($input);
+        if (strlen($key) < 5) {
+            return null;
+        }
+        foreach (self::db()->fetchAll("SELECT DISTINCT phone FROM retailers WHERE phone LIKE ? AND status = 'active'", ['%' . substr($key, -5) . '%']) as $r) {
+            if (self::phoneKey((string) $r['phone']) === $key) {
+                return (string) $r['phone'];
+            }
+        }
+
+        return null;
+    }
+
+    public static function ensureAccount(string $phone): void
+    {
+        $shop = self::db()->fetch("SELECT name FROM retailers WHERE phone = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [$phone]);
+        $exists = self::db()->fetch('SELECT id FROM users WHERE phone = ? LIMIT 1', [$phone]);
+        if ($shop !== null && $exists === null) {
+            User::createAccount((string) $shop['name'], $phone, self::phoneKey($phone), 'retailer', 'active');
+        }
+    }
+
     /** @param array{name:string, phone:?string, address:string, lat:float, lng:float} $d */
     public static function create(int $partnerId, int $srId, array $d): array
     {

@@ -40,3 +40,6 @@ require __DIR__ . '/sr.php';
 
 // DSR routes (/dsr/*)
 require __DIR__ . '/dsr.php';
+
+// Retailer routes (/retailer/*)
+require __DIR__ . '/retailer.php';

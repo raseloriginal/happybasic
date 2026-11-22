@@ -75,6 +75,7 @@
                 f.unit_type.value = p.unit_type;
                 f.quantity_per_unit.value = p.qty_per_unit;
                 f.profit_margin.value = p.dealer_margin;
+                f.mrp.value = p.mrp ?? '';
                 f.sku.value = p.sku || '';
                 f.status.value = p.status;
             }

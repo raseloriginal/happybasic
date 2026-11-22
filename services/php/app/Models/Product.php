@@ -102,6 +102,7 @@ final class Product
             'stock' => self::unitPcs($stock, $qpu, (string) $r['unit_type']),
             'reserved_pcs' => $reserved,
             'available_pcs' => $stock - $reserved,
+            'mrp' => $r['mrp'] !== null ? (float) $r['mrp'] : null,
             'priced' => (float) $r['base_price'] > 0,
             'has_lots' => (int) ($r['lot_rows'] ?? 0) > 0,
             'status' => Format::status($r['status']),
@@ -169,9 +170,9 @@ final class Product
     {
         self::assertRefs($partnerId, $d);
         self::db()->execute(
-            'INSERT INTO products (partner_id, company_id, category_id, sku, name, image_path, unit_type, qty_per_unit, dealer_margin, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$partnerId, $d['company_id'], $d['category_id'], $d['sku'], $d['name'], $d['image_path'], $d['unit_type'], $d['qty_per_unit'], $d['dealer_margin'], $d['status']]
+            'INSERT INTO products (partner_id, company_id, category_id, sku, name, image_path, unit_type, qty_per_unit, dealer_margin, mrp, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$partnerId, $d['company_id'], $d['category_id'], $d['sku'], $d['name'], $d['image_path'], $d['unit_type'], $d['qty_per_unit'], $d['dealer_margin'], $d['mrp'], $d['status']]
         );
 
         return self::findOrFail($partnerId, (int) self::db()->lastInsertId());
@@ -195,8 +196,8 @@ final class Product
         $base = self::dealerPrice((float) $current['company_price'], (float) $d['dealer_margin']);
         self::db()->execute(
             'UPDATE products SET company_id = ?, category_id = ?, sku = ?, name = ?, image_path = COALESCE(?, image_path), unit_type = ?,
-                qty_per_unit = ?, dealer_margin = ?, base_price = ?, status = ? WHERE id = ?',
-            [$d['company_id'], $d['category_id'], $d['sku'], $d['name'], $d['image_path'], $d['unit_type'], $d['qty_per_unit'], $d['dealer_margin'], $base, $d['status'], $id]
+                qty_per_unit = ?, dealer_margin = ?, mrp = ?, base_price = ?, status = ? WHERE id = ?',
+            [$d['company_id'], $d['category_id'], $d['sku'], $d['name'], $d['image_path'], $d['unit_type'], $d['qty_per_unit'], $d['dealer_margin'], $d['mrp'], $base, $d['status'], $id]
         );
 
         return self::findOrFail($partnerId, $id);
