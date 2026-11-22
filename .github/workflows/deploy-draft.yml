@@ -16,6 +16,12 @@ jobs:
           APP_DIR: ${{ secrets.VPS_APP_DIR }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          # Secret may be the raw PEM or its base64 (single line, paste-safe).
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN'; then
+            printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_deploy
+          else
+            printf '%s' "$SSH_KEY" | tr -d ' \r\n' | base64 -d > ~/.ssh/id_deploy
+          fi
+          chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh -i ~/.ssh/id_deploy "$SSH_USER@$HOST" "bash '$APP_DIR/deploy.sh'"
