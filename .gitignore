@@ -6,5 +6,6 @@ node_modules/
 __pycache__/
 storage/logs/*
 storage/uploads/*
+storage/backups/*
 services/php/public/uploads/*
 !.gitkeep

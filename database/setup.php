@@ -28,3 +28,6 @@ foreach (array_filter(array_map('trim', explode(';', $sql))) as $statement) {
 }
 
 echo "Database `{$db}` is ready.\n";
+
+// schema.sql already contains every migration up to database/BASELINE; later ones run via migrate.php.
+passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/migrate.php') . ' --baseline');

@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 git fetch --prune origin draft
 git reset --hard origin/draft          # .env, uploads, logs are untracked -> untouched
+php database/migrate.php                # apply new database/migrations/*.sql (backs up DB first)
 if command -v pm2 >/dev/null 2>&1; then
   pm2 startOrRestart ecosystem.config.cjs --update-env && pm2 save
 fi

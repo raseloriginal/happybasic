@@ -70,3 +70,7 @@ DSRs sign in at `/dsr/login`. Apply `database/migrations/005_dsr_settlement.sql`
 - `main` = stable, `draft` = staging. A push to `draft` auto-deploys to https://v2.happybangladesh.com (GitHub Actions → SSH → `deploy.sh`).
 - Test on v2, then merge `draft` into `main`.
 - `.env`, uploads and logs live only on the server (gitignored). DB schema changes are **not** applied automatically — run new files from `database/migrations/` by hand.
+
+### Database migrations (automatic)
+
+Every DB change = a **new** file `database/migrations/NNN_description.sql` (next number, never edit an applied one). `deploy.sh` runs `php database/migrate.php`, which backs the DB up to `storage/backups/` (last 10 kept) and applies pending files once each, tracked in `schema_migrations`. A failing file stops the deploy (red in Actions) and is not recorded — MySQL cannot roll DDL back, so fix and push again. Check state: `php database/migrate.php --status`. On an existing DB, run `php database/migrate.php --baseline` once to mark current files as applied.
