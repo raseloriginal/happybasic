@@ -1,0 +1,10 @@
+.env
+.tokenade/
+**/.tokenade/
+node_modules/
+.venv/
+__pycache__/
+storage/logs/*
+storage/uploads/*
+services/php/public/uploads/*
+!.gitkeep

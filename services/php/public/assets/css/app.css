@@ -1,0 +1,29 @@
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #f6f8fa;
+    color: #1f2328;
+    line-height: 1.5;
+}
+.container { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+.navbar { background: #fff; border-bottom: 1px solid #d0d7de; margin-bottom: 24px; }
+.nav-inner { display: flex; justify-content: space-between; align-items: center; height: 56px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; text-decoration: none; color: #1f2328; }
+.brand-logo { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #d0d7de; background: #fff; padding: 2px; object-fit: contain; display: block; }
+.nav-links { display: flex; gap: 16px; align-items: center; }
+.nav-links a, .link-btn { color: #0969da; text-decoration: none; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.inline-form { display: inline; margin: 0; }
+.card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 24px; }
+.auth-card { max-width: 420px; margin: 0 auto; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.field input { width: 100%; padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px; font: inherit; }
+.field-error { color: #cf222e; font-size: 13px; display: block; margin-top: 4px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.btn { display: inline-block; background: #1f883d; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+.btn-secondary { background: #eaeef2; color: #1f2328; }
+.alert { padding: 12px 14px; border-radius: 6px; margin-bottom: 16px; }
+.alert-success { background: #dafbe1; border: 1px solid #4ac26b; color: #116329; }
+.alert-error { background: #ffebe9; border: 1px solid #ff8182; color: #82071e; }
+.trace { background: #161b22; color: #c9d1d9; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px; }
