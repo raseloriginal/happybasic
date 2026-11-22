@@ -64,3 +64,9 @@ DSRs sign in at `/dsr/login`. Apply `database/migrations/005_dsr_settlement.sql`
 - **Ready sale** sells van stock at the loaded dealer price (DSR cannot change it) to an existing retailer or a new one pinned at the DSR's location.
 - **Net Pay** = delivered (SR price) + ready sale + old due collected − damage − expenses − new due. SR O/C is not deducted from cash.
 - DSR submits the cash count (trip → `in_review`); the partner **approves** (trip → `settled`) or **sends back** with a note. Approval returns unsold stock to its lots (newest allocations first), sets FIFO cost per sold line, posts SR delivery O/C to `sr_oc_ledger` / `salesmen.oc_balance`, updates retailer due balances and credits damage claims to `company_ledger`.
+
+## Deployment workflow
+
+- `main` = stable, `draft` = staging. A push to `draft` auto-deploys to https://v2.happybangladesh.com (GitHub Actions → SSH → `deploy.sh`).
+- Test on v2, then merge `draft` into `main`.
+- `.env`, uploads and logs live only on the server (gitignored). DB schema changes are **not** applied automatically — run new files from `database/migrations/` by hand.
