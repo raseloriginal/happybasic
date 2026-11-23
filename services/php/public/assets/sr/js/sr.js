@@ -2452,18 +2452,19 @@
         // LIVE GPS: keep the 50m circle on the SR's real position
         // =====================================================================
         if (navigator.geolocation && geoWatchId === null) {
-            geoWatchId = navigator.geolocation.watchPosition((pos) => {
+            const geoFilter = window.HbGeoFilter.create();
+            geoWatchId = navigator.geolocation.watchPosition((raw) => {
                 const first = !srStore.gpsFix;
-                const moved = haversineMeters(srLoc.lat, srLoc.lng, pos.coords.latitude, pos.coords.longitude);
-                if (!first && moved < 3) return;
-                srLoc.lat = pos.coords.latitude;
-                srLoc.lng = pos.coords.longitude;
+                const pos = geoFilter.push(raw);   // smoothed; null while standing still / vague fix
+                if (!pos) return;
+                srLoc.lat = pos.lat;
+                srLoc.lng = pos.lng;
                 srStore.gpsFix = true;
                 refreshOrderView();
                 if (first && hasLeaflet && activeLeafletMap) activeLeafletMap.setView([srLoc.lat, srLoc.lng], 18);
             }, () => {
                 if (!srStore.gpsFix) showToast('লোকেশন পাওয়া যায়নি। কাছাকাছি দোকান দেখতে লোকেশন পারমিশন দিন।');
-            }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+            }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
         }
     }
 

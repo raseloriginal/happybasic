@@ -1532,7 +1532,7 @@
                 });
             return rsSyncPromise;
         }
-        syncDsrRetailers();
+        // The full shop list (~600 KB for thousands of shops) is only needed by ready sale: fetched when it is opened.
 
         const rsCart = new Map(); // product_id -> pcs
         let rsMode = 'existing';
@@ -2116,6 +2116,7 @@
             if ($('rsRetSpinner')) $('rsRetSpinner').hidden = true;
             if ($('rsProdSpinner')) $('rsProdSpinner').hidden = true;
 
+            syncDsrRetailers();
             setRsShopView('list');
             setRsMode('existing');
             openModal('readySaleModal');
@@ -2392,16 +2393,17 @@
 
         // Live GPS for distances, the map dot and new ready-sale retailers
         if (navigator.geolocation && geoWatchId === null) {
-            geoWatchId = navigator.geolocation.watchPosition((pos) => {
-                const moved = haversineMeters(dsrLoc.lat, dsrLoc.lng, pos.coords.latitude, pos.coords.longitude);
-                if (dsrStore.gpsFix && moved < 5) return;
-                dsrLoc.lat = pos.coords.latitude;
-                dsrLoc.lng = pos.coords.longitude;
+            const geoFilter = window.HbGeoFilter.create();
+            geoWatchId = navigator.geolocation.watchPosition((raw) => {
+                const pos = geoFilter.push(raw);   // smoothed; null while standing still / vague fix
+                if (!pos) return;
+                dsrLoc.lat = pos.lat;
+                dsrLoc.lng = pos.lng;
                 dsrStore.gpsFix = true;
                 refreshDeliveryViews();
             }, () => {
                 if (!dsrStore.gpsFix) showToast('অবস্থান পাওয়া যায়নি। দূরত্ব এবং নতুন দোকান যোগ করতে লোকেশন অ্যাক্সেস চালু করুন।');
-            }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+            }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
         }
 
         refreshDeliveryViews();

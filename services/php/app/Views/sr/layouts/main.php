@@ -38,6 +38,8 @@ $hasCustomHeader = in_array($active, ['dashboard', 'order', 'history', 'profile'
     <?= csrf_meta() ?>
     <title><?= e($title ?? 'SR') ?> — <?= e(config('app.name', 'HappyBasic')) ?> SR</title>
     <link rel="icon" type="image/jpeg" href="<?= e(asset('images/logo.jpg')) ?>">
+    <link rel="preconnect" href="https://mt0.google.com">
+    <link rel="preconnect" href="https://mt1.google.com">
     <link rel="stylesheet" href="<?= e(asset('vendor/leaflet/leaflet.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('sr/css/sr.css')) ?>">
     <noscript><style>#appBootLoader{display:none!important;}</style></noscript>
@@ -96,6 +98,8 @@ $hasCustomHeader = in_array($active, ['dashboard', 'order', 'history', 'profile'
 </div>
 
 <script src="<?= e(asset('vendor/leaflet/leaflet.js')) ?>"></script>
+<script src="<?= e(asset('shared/js/geo-filter.js')) ?>"></script>
+<script src="<?= e(asset('shared/js/map-tiles.js')) ?>"></script>
 <script src="<?= e(asset('sr/js/sr.js')) ?>"></script>
 </body>
 </html>

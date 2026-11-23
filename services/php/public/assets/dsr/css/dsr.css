@@ -2390,3 +2390,8 @@ input:focus, select:focus { border-color: var(--accent); }
 .photo-pin { position: relative; width: 46px; height: 46px; }
 .photo-pin img { width: 46px; height: 46px; border-radius: 999px; object-fit: cover; display: block; border: 3px solid #fff; background: #e2e8f0; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.35); }
 .photo-pin::after { content: ""; position: absolute; left: 50%; top: 100%; margin: -4px 0 0 -8px; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 11px solid #fff; filter: drop-shadow(0 2px 2px rgba(15, 23, 42, 0.25)); }
+
+/* Map skeleton while the first tiles load (slow network) */
+.hb-map-loading { background: linear-gradient(110deg, #e9edf1 30%, #f4f6f8 45%, #e9edf1 60%) 0 0 / 220% 100%; animation: hb-map-shimmer 1.4s linear infinite; }
+.hb-map-loading::after { content: "ম্যাপ লোড হচ্ছে…"; position: absolute; left: 50%; top: 38%; transform: translateX(-50%); z-index: 450; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: #475569; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12); pointer-events: none; }
+@keyframes hb-map-shimmer { to { background-position: -220% 0; } }

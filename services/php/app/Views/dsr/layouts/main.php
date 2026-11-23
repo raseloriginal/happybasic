@@ -16,6 +16,8 @@ $isMapMode = ($activeNav ?? '') === 'delivery';
     <?= csrf_meta() ?>
     <title><?= e($title ?? 'DSR') ?> — <?= e(config('app.name', 'HappyBasic')) ?> DSR</title>
     <link rel="icon" type="image/jpeg" href="<?= e(asset('images/logo.jpg')) ?>">
+    <link rel="preconnect" href="https://mt0.google.com">
+    <link rel="preconnect" href="https://mt1.google.com">
     <link rel="stylesheet" href="<?= e(asset('vendor/leaflet/leaflet.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('dsr/css/dsr.css')) ?>">
     <noscript><style>#appBootLoader{display:none!important;}</style></noscript>
@@ -70,6 +72,8 @@ $isMapMode = ($activeNav ?? '') === 'delivery';
 </div>
 
 <script src="<?= e(asset('vendor/leaflet/leaflet.js')) ?>"></script>
+<script src="<?= e(asset('shared/js/geo-filter.js')) ?>"></script>
+<script src="<?= e(asset('shared/js/map-tiles.js')) ?>"></script>
 <script src="<?= e(asset('dsr/js/dsr.js')) ?>"></script>
 </body>
 </html>

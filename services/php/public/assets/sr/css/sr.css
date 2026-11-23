@@ -2443,3 +2443,8 @@ a { color: inherit; }
 .profile-photo-btn { position: relative; overflow: hidden; cursor: pointer; }
 .profile-photo-btn img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
 .profile-photo-cam { position: absolute; right: -2px; bottom: -2px; font-size: 11px; line-height: 1; background: #fff; border-radius: 999px; padding: 2px; }
+
+/* Map skeleton while the first tiles load (slow network) */
+.hb-map-loading { background: linear-gradient(110deg, #e9edf1 30%, #f4f6f8 45%, #e9edf1 60%) 0 0 / 220% 100%; animation: hb-map-shimmer 1.4s linear infinite; }
+.hb-map-loading::after { content: "ম্যাপ লোড হচ্ছে…"; position: absolute; left: 50%; top: 38%; transform: translateX(-50%); z-index: 450; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: #475569; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12); pointer-events: none; }
+@keyframes hb-map-shimmer { to { background-position: -220% 0; } }
