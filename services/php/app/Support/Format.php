@@ -46,6 +46,7 @@ final class Format
 
     public static function slug(string $text): string
     {
-        return trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($text)), '-');
+        // Keep letters/digits of any script (e.g. Bangla), so non-English names get a usable slug.
+        return trim((string) preg_replace('/[^\p{L}\p{M}\p{N}]+/u', '-', mb_strtolower($text, 'UTF-8')), '-');
     }
 }

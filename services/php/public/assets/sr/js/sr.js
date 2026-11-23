@@ -100,7 +100,7 @@
         el.className = 'toast';
         el.textContent = message;
         toastStack.appendChild(el);
-        setTimeout(() => el.remove(), 30);
+        setTimeout(() => el.remove(), 1000);
     }
 
     function escapeHtml(str) {
