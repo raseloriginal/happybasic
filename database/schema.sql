@@ -42,6 +42,17 @@ CREATE TABLE IF NOT EXISTS `user_sessions` (
     CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Offline sync: results of queued app writes, keyed by the client's op id (idempotent replays).
+CREATE TABLE IF NOT EXISTS `offline_ops` (
+    `op_id` VARCHAR(64) NOT NULL PRIMARY KEY,
+    `user_id` INT UNSIGNED NOT NULL,
+    `path` VARCHAR(190) NOT NULL,
+    `status_code` SMALLINT UNSIGNED NOT NULL,
+    `response` MEDIUMTEXT NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_offline_ops_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `activity_logs` (
     `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `user_id` INT UNSIGNED NULL,

@@ -496,7 +496,21 @@
         return home.replace(/\/dsr\/dashboard$/, '') + path;
     }
 
-    async function dsrApi(method, path, body) {
+    // ---------------------------------------------------------------- offline
+    // Writes that support offline (`offline` arg of dsrApi) are queued in IndexedDB when there is no
+    // network, applied to the screen right away, and sent in order once the network is back. Each op
+    // carries an X-Op-Id; the server answers a repeated op from its stored result, so nothing is applied twice.
+    class NetErr extends Error {}
+    const HB_USER = document.body.dataset.hbUser || '0';
+    const offlineOk = () => !!window.HbOffline?.available() && HB_USER !== '0';
+    /** Body value for a retailer id: shops created offline keep their temporary string id until synced. */
+    const rid = (id) => (String(id).startsWith('tmp-') ? String(id) : Number(id));
+    const isTmp = (id) => String(id).startsWith('tmp-');
+    let pageSyncedHook = null; // set by the current page; called after queued ops reached the server
+
+    async function rawSend(method, path, body, opId, timeoutMs) {
+        const ctrl = timeoutMs ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
         let res;
         try {
             res = await fetch(appUrl(path), {
@@ -507,21 +521,201 @@
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': csrfToken(),
+                    ...(opId ? { 'X-Op-Id': opId } : {}),
                 },
                 body: body === undefined ? undefined : JSON.stringify(body),
+                signal: ctrl?.signal,
             });
         } catch {
-            throw new Error('নেটওয়ার্ক ত্রুটি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।');
+            throw new NetErr('নেটওয়ার্ক ত্রুটি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।');
+        } finally {
+            if (timer) clearTimeout(timer);
         }
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON */ }
+        return { res, data };
+    }
+
+    /**
+     * @param {{label:string, apply:function():object, tmp?:string}=} offline  when given, the write is queued
+     *        instead of failing if the network is down; `apply` makes the same change on screen right away.
+     */
+    async function dsrApi(method, path, body, offline) {
+        const canQueue = !!offline && offlineOk();
+        const opId = canQueue ? window.HbOffline.uuid() : null;
+        // Keep order: while older ops wait in the queue, new ones go behind them.
+        if (canQueue && (!navigator.onLine || (await window.HbOffline.count(HB_USER)) > 0)) {
+            return queueOp(opId, method, path, body, offline);
+        }
+        let r;
+        try {
+            r = await rawSend(method, path, body, opId, canQueue ? 15000 : 0);
+        } catch (err) {
+            if (canQueue && err instanceof NetErr) return queueOp(opId, method, path, body, offline);
+            throw err;
+        }
+        const { res, data } = r;
         if (res.status === 401) {
             window.location.href = data.redirect || appUrl('/dsr/login');
-            throw new Error('সেশন শেষ হয়েছে।');
+            throw new Error('সেশন শেষ হয়েছে।');
         }
-        if (res.status === 419) throw new Error('আপনার সেশন মেয়াদোত্তীর্ণ হয়েছে। অনুগ্রহ করে পেজ রিলোড করুন।');
-        if (!res.ok || data.ok === false) throw new Error(data.message || `অনুরোধ ব্যর্থ হয়েছে (HTTP ${bnDigits(res.status)})।`);
+        if (res.status === 419) throw new Error('আপনার সেশন মেয়াদোত্তীর্ণ হয়েছে। অনুগ্রহ করে পেজ রিলোড করুন।');
+        if (!res.ok || data.ok === false) throw new Error(data.message || `অনুরোধ ব্যর্থ হয়েছে (HTTP ${bnDigits(res.status)})।`);
         return data;
+    }
+
+    async function queueOp(id, method, path, body, offline) {
+        const result = offline.apply() || {}; // may throw (e.g. not enough stock) → nothing is queued
+        await window.HbOffline.enqueue({ id, user: HB_USER, method, path, body, label: offline.label, tmp: offline.tmp || null });
+        scheduleSync(1500);
+        return { ...result, queued: true, message: 'অফলাইনে সংরক্ষিত — নেট পেলে নিজে থেকে সিঙ্ক হবে।' };
+    }
+
+    let syncing = false;
+    let syncTimer = null;
+    function scheduleSync(ms) {
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(syncOutbox, ms);
+    }
+
+    async function refreshCsrf() {
+        try {
+            const { res, data } = await rawSend('GET', '/dsr/csrf', undefined, null, 15000);
+            if (!res.ok || !data.token) return false;
+            document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', data.token);
+            return true;
+        } catch { return false; }
+    }
+
+    /** A shop created offline got its real id: rewrite the ops still waiting that refer to it. */
+    async function remapTmp(tmp, real, rest) {
+        for (const op of rest) {
+            const before = JSON.stringify({ path: op.path, body: op.body });
+            if (!before.includes(tmp)) continue;
+            const after = JSON.parse(before.split(tmp).join(real));
+            await window.HbOffline.put({ ...op, path: after.path, body: after.body });
+        }
+        (dsrStore.retailers || []).forEach((r) => { if (String(r.id) === tmp) r.id = real; });
+    }
+
+    async function syncOutbox() {
+        if (syncing || !offlineOk() || !navigator.onLine) return;
+        syncing = true;
+        renderSyncPill();
+        let synced = 0;
+        let csrfRetried = false;
+        try {
+            for (;;) {
+                const ops = await window.HbOffline.list(HB_USER);
+                if (!ops.length) break;
+                const op = ops[0];
+                let r;
+                try {
+                    r = await rawSend(op.method, op.path, op.body, op.id, 30000);
+                } catch {
+                    scheduleSync(30000); // still no network — try again later
+                    break;
+                }
+                const { res, data } = r;
+                if (res.status === 419 && !csrfRetried) {
+                    csrfRetried = true;
+                    if (await refreshCsrf()) continue;
+                }
+                if (res.status === 401 || res.status === 419) {
+                    showToast('সিঙ্কের জন্য আবার লগইন করুন — অফলাইনের কাজগুলো রাখা আছে।');
+                    break;
+                }
+                if (res.status >= 500 || res.status === 429) {
+                    scheduleSync(60000);
+                    break;
+                }
+                if (res.ok && data.ok !== false) {
+                    if (op.tmp && data.newRetailer?.id) await remapTmp(op.tmp, String(data.newRetailer.id), ops.slice(1));
+                } else {
+                    // The server refused it (e.g. trip already submitted, stock changed): keep a record for the user.
+                    await window.HbOffline.addFailed(HB_USER, { label: op.label, message: data.message || `HTTP ${res.status}`, at: op.at });
+                }
+                await window.HbOffline.remove(op.seq);
+                synced += 1;
+            }
+        } finally {
+            syncing = false;
+            renderSyncPill();
+        }
+        if (synced > 0) {
+            showToast(`${bnDigits(synced)}টি অফলাইন কাজ সিঙ্ক হয়েছে।`);
+            // Reload the server's numbers only when nothing is left in the queue — otherwise the
+            // screen would lose the local changes of ops still waiting.
+            if ((await window.HbOffline.count(HB_USER)) === 0) pageSyncedHook?.();
+        }
+    }
+
+    // Sync status pill (offline / waiting / syncing / failed)
+    const syncPill = document.createElement('button');
+    syncPill.type = 'button';
+    syncPill.className = 'hb-sync-pill';
+    syncPill.hidden = true;
+    document.body.appendChild(syncPill);
+    async function renderSyncPill() {
+        if (!offlineOk()) return;
+        const [ops, failed] = await Promise.all([window.HbOffline.list(HB_USER), window.HbOffline.failed(HB_USER)]);
+        const n = ops.length;
+        let text = '';
+        let tone = '';
+        if (failed.length) { text = `⚠ ${bnDigits(failed.length)}টি কাজ সিঙ্ক হয়নি — দেখুন`; tone = 'is-failed'; }
+        else if (syncing && n) { text = `সিঙ্ক হচ্ছে… (${bnDigits(n)})`; tone = 'is-syncing'; }
+        else if (n) { text = `${navigator.onLine ? '' : 'অফলাইন · '}${bnDigits(n)}টি কাজ সিঙ্ক বাকি`; tone = 'is-waiting'; }
+        else if (!navigator.onLine) { text = 'অফলাইন মোড'; tone = 'is-offline'; }
+        syncPill.hidden = !text;
+        syncPill.textContent = text;
+        syncPill.className = `hb-sync-pill ${tone}`;
+    }
+    syncPill.addEventListener('click', async () => {
+        const failed = await window.HbOffline.failed(HB_USER);
+        if (failed.length) {
+            window.alert(`এই কাজগুলো সার্ভার গ্রহণ করেনি, আবার করতে হবে:\n\n${failed.map((f) => `• ${f.label}: ${f.message}`).join('\n')}`);
+            await window.HbOffline.clearFailed(HB_USER);
+            return;
+        }
+        syncOutbox();
+    });
+    if (offlineOk()) {
+        window.addEventListener('hb-outbox-change', renderSyncPill);
+        window.addEventListener('online', () => { renderSyncPill(); syncOutbox(); });
+        window.addEventListener('offline', renderSyncPill);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncOutbox(); });
+        renderSyncPill();
+        scheduleSync(800);
+    }
+
+    // Logout: warn about unsynced work; forget cached pages/data of this user on this phone.
+    document.addEventListener('submit', async (e) => {
+        const f = e.target;
+        if (!(f instanceof HTMLFormElement) || !/\/dsr\/logout$/.test(f.getAttribute('action') || '') || f.dataset.confirmed) return;
+        if (!offlineOk()) return;
+        e.preventDefault();
+        const n = await window.HbOffline.count(HB_USER);
+        if (n > 0 && !window.confirm(`${bnDigits(n)}টি অফলাইন কাজ এখনো সিঙ্ক হয়নি। সাইন আউট করলেও সেগুলো এই ফোনে থাকবে এবং আবার লগইন করলে সিঙ্ক হবে। সাইন আউট করবেন?`)) return;
+        await Promise.all([window.HbOffline.kvDel(`deliv:${HB_USER}`), window.HbOffline.kvDel(`exp:${HB_USER}`), window.caches?.delete('hb-pages-v1')]);
+        f.dataset.confirmed = '1';
+        f.submit();
+    }, true);
+
+    // Keep every DSR page in the offline cache (once per session, in the background). Only counts as done
+    // when the Service Worker controlled the requests and every page came back, so a first visit or a
+    // reload in the middle does not leave pages uncached.
+    if (offlineOk() && navigator.serviceWorker && navigator.onLine) {
+        const warm = async () => {
+            try { if (sessionStorage.getItem('hb-dsr-warm')) return; } catch { /* private mode */ }
+            if (!navigator.serviceWorker.controller || !navigator.onLine) return;
+            let ok = true;
+            for (const p of ['/dsr/delivery', '/dsr/expense', '/dsr/van-stock', '/dsr/settlement', '/dsr/dashboard']) {
+                try { ok = (await fetch(appUrl(p), { credentials: 'same-origin' })).ok && ok; } catch { ok = false; }
+            }
+            if (ok) try { sessionStorage.setItem('hb-dsr-warm', '1'); } catch { /* private mode */ }
+        };
+        navigator.serviceWorker.ready.then(() => setTimeout(warm, 2500)).catch(() => {});
+        navigator.serviceWorker.addEventListener('controllerchange', () => setTimeout(warm, 1000));
     }
 
     async function withBusy(btn, label, task) {
@@ -723,6 +917,7 @@
                 fittedOnce = false;
                 syncTripHeaderUi(false);
                 refreshDeliveryViews();
+                saveSnapshot();
                 try {
                     const url = new URL(window.location.href);
                     url.searchParams.set('date', selectedDate);
@@ -771,6 +966,214 @@
             }
             refreshDeliveryViews();
             if (draft) renderStop();
+            saveSnapshot();
+        }
+
+        // ------------------------------------------------------- offline: local copies of server changes
+        // Used only while a write waits in the offline queue. They mirror DsrDelivery on the server closely
+        // enough for the screen; once the queue is synced the server's own numbers replace them.
+        const snapKey = `deliv:${HB_USER}`;
+        function saveSnapshot() {
+            if (!offlineOk()) return;
+            window.HbOffline.kvSet(snapKey, { date: selectedDate, trip, stops, vanStock, damageProducts, at: Date.now() });
+        }
+
+        function stopStatus(s) {
+            const keys = s.companies.map((c) => c.status_key);
+            if (keys.includes('assigned') || keys.includes('pending')) return 'Pending';
+            if (!keys.some((k) => k !== 'cancelled')) return 'Cancelled';
+            return Number(s.due_amount || 0) > 0.004 ? 'Due' : 'Delivered';
+        }
+
+        /** Van stock and per-line "stock" from the (locally changed) stops — same rules as vanStock()/stops() on the server. */
+        function recomputeVan() {
+            const delivered = {};
+            const readySold = {};
+            stops.forEach((s) => s.companies.forEach((c) => {
+                if (c.cancelled || c.status_key === 'assigned' || c.status_key === 'pending') return;
+                c.items.forEach((it) => {
+                    const pid = String(it.product_id);
+                    delivered[pid] = (delivered[pid] || 0) + Number(it.qty || 0);
+                    if (c.ready_sale) readySold[pid] = (readySold[pid] || 0) + Number(it.qty || 0);
+                });
+            }));
+            vanStock.forEach((p) => {
+                const pid = String(p.id);
+                p.delivered_pcs = delivered[pid] || 0;
+                p.ready_sold_pcs = readySold[pid] || 0;
+                p.available_pcs = Number(p.dispatched_pcs || 0) - p.delivered_pcs;
+            });
+            const avail = Object.fromEntries(vanStock.map((p) => [String(p.id), p.available_pcs]));
+            stops.forEach((s) => s.companies.forEach((c) => {
+                const resolved = !(c.status_key === 'assigned' || c.status_key === 'pending');
+                c.items.forEach((it) => { it.stock = (avail[String(it.product_id)] || 0) + (resolved ? Number(it.qty || 0) : 0); });
+            }));
+        }
+
+        function commitLocal() {
+            recomputeVan();
+            stops.forEach((s) => { s.status = stopStatus(s); });
+            if (activeId) {
+                const fresh = stopById(activeId);
+                draft = fresh ? clone(fresh) : null;
+            }
+            refreshDeliveryViews();
+            if (draft) renderStop();
+            saveSnapshot();
+        }
+
+        function replaceStop(s) {
+            const i = stops.findIndex((x) => x.id === s.id);
+            if (i === -1) stops.push(s); else stops[i] = s;
+        }
+
+        function localSaveStop(local, paid) {
+            const m = computeOrderMetrics(local);
+            const forBill = Math.min(paid, m.shouldPay);
+            local.companies.forEach((c) => {
+                if (!c.ready_sale) c.status_key = c.cancelled ? 'cancelled' : 'delivered';
+            });
+            local.paid_amount = round2(forBill + local.companies.filter((c) => c.ready_sale).reduce((t, c) => t + c.items.reduce((a, it) => a + it.qty * it.sr_rate, 0), 0));
+            local.old_due_collected = round2(paid - forBill);
+            local.due_amount = round2(m.shouldPay - forBill);
+            local.cancel_reason = local.companies.some((c) => c.cancelled) ? (local.cancel_reason || '') : '';
+            replaceStop(local);
+            commitLocal();
+        }
+
+        function localResetStop(id) {
+            const s = clone(stopById(id));
+            if (!s || !s.companies.some((c) => !c.ready_sale)) throw new Error('এই দোকানে আপনার ট্রিপের কোনো অর্ডার নেই।');
+            s.companies.forEach((c) => {
+                if (c.ready_sale) return;
+                c.status_key = 'assigned';
+                c.cancelled = false;
+                c.cancel_reason = null;
+                c.items.forEach((it) => { it.qty = it.ordered_qty; });
+            });
+            s.damages = [];
+            s.old_due_collected = 0;
+            s.cancel_reason = '';
+            const readyPaid = s.companies.filter((c) => c.ready_sale).reduce((t, c) => t + c.items.reduce((a, it) => a + it.qty * it.sr_rate, 0), 0);
+            s.paid_amount = round2(readyPaid);
+            s.due_amount = 0;
+            replaceStop(s);
+            recomputeVan();
+            // not delivered yet: start from the ordered qty, but never more than the van holds
+            s.companies.forEach((c) => {
+                if (!c.ready_sale) c.items.forEach((it) => { it.qty = Math.min(it.ordered_qty, Math.max(0, it.stock)); });
+            });
+            commitLocal();
+        }
+
+        function localDamages(id, items) {
+            const s = clone(stopById(id));
+            if (!s) return;
+            const byId = Object.fromEntries(damageProducts.map((p) => [String(p.id), p]));
+            const merged = new Map();
+            items.forEach((it) => merged.set(String(it.product_id), (merged.get(String(it.product_id)) || 0) + Number(it.pcs || 0)));
+            s.damages = [];
+            merged.forEach((pcs, pid) => {
+                const p = byId[pid];
+                if (!p || pcs < 1) return;
+                const order = s.companies.find((c) => !c.ready_sale && c.status_key === 'assigned' && Number(c.company_id) === Number(p.company_id));
+                s.damages.push({ order_id: order ? Number(order.id) : 0, product_id: Number(pid), name: p.name, pcs, amount: round2(pcs * Number(p.rate || 0)) });
+            });
+            replaceStop(s);
+            commitLocal();
+        }
+
+        /** Ready sale at the van price (fixed when the trip was loaded), one order per company — like the server. */
+        function localReadySale(body, tmpId) {
+            const vanById = Object.fromEntries(vanStock.map((p) => [String(p.id), p]));
+            const merged = new Map();
+            body.items.forEach((it) => merged.set(String(it.product_id), (merged.get(String(it.product_id)) || 0) + Number(it.pcs || 0)));
+            merged.forEach((pcs, pid) => {
+                const p = vanById[pid];
+                if (!p) throw new Error('ভ্যানে লোড করা পণ্য থেকে নির্বাচন করুন।');
+                if (pcs > p.available_pcs) throw new Error(`${p.name}: ভ্যানে মাত্র ${bnDigits(p.available_pcs)} পিস বাকি আছে।`);
+            });
+
+            let shop;
+            let newRetailer = null;
+            if (body.mode === 'new') {
+                newRetailer = { id: tmpId, name: body.name, phone: body.phone || '', address: body.address || 'স্পট লোকেশন', lat: Number(body.lat), lng: Number(body.lng), sr_id: null, due: 0 };
+                shop = newRetailer;
+            } else {
+                shop = retailers.find((r) => String(r.id) === String(body.retailer_id)) || stopById(body.retailer_id) && { id: body.retailer_id, name: stopById(body.retailer_id).retailer_name };
+                if (!shop) throw new Error('একটি দোকান নির্বাচন করুন।');
+            }
+
+            const sid = String(shop.id);
+            const s = stopById(sid) ? clone(stopById(sid)) : {
+                id: sid, retailer_name: shop.name, phone: shop.phone || '', address: shop.address || '', lat: Number(shop.lat || 0), lng: Number(shop.lng || 0),
+                sr_names: [], companies: [], damages: [], old_due_collected: 0, existing_due: Number(shop.due || 0),
+                paid_amount: 0, due_amount: 0, cancel_reason: '', status: 'Delivered', editable: false,
+            };
+            const byCompany = new Map();
+            merged.forEach((pcs, pid) => {
+                const p = vanById[pid];
+                if (!byCompany.has(p.company_id)) byCompany.set(p.company_id, []);
+                byCompany.get(p.company_id).push({ p, pcs });
+            });
+            let total = 0;
+            const receiptItems = [];
+            byCompany.forEach((lines, companyId) => {
+                s.companies.push({
+                    id: `tmp-${window.HbOffline.uuid()}`, order_code: 'সিঙ্ক বাকি', name: lines[0].p.company, company_id: Number(companyId),
+                    sr: 'Ready Sale', ready_sale: true, status_key: 'delivered', cancelled: false, cancel_reason: null,
+                    items: lines.map(({ p, pcs }) => {
+                        const line = round2(pcs * Number(p.base_rate));
+                        total = round2(total + line);
+                        receiptItems.push({ name: p.name, pcs, rate: p.base_rate, total: line });
+                        return { product_id: String(p.id), name: p.name, unit_type: p.unit_type, qty_per_unit: p.qty_per_unit, ordered_qty: pcs, qty: pcs, base_rate: Number(p.base_rate), sr_rate: Number(p.base_rate), stock: 0 };
+                    }),
+                });
+            });
+            s.paid_amount = round2(Number(s.paid_amount || 0) + total);
+            replaceStop(s);
+            commitLocal();
+            return { receipt: { retailer: shop.name, total, codes: ['সিঙ্ক বাকি'], items: receiptItems }, ...(newRetailer ? { newRetailer } : {}) };
+        }
+
+        function localDeleteReadySale(orderId) {
+            if (isTmp(orderId)) throw new Error('এই রেডি সেলটি এখনো সিঙ্ক হয়নি — সিঙ্ক হওয়ার পর মুছুন।');
+            const s = stops.find((x) => x.companies.some((c) => c.id === String(orderId)));
+            if (!s) return;
+            const c = s.companies.find((x) => x.id === String(orderId));
+            s.companies = s.companies.filter((x) => x !== c);
+            s.paid_amount = round2(Number(s.paid_amount || 0) - c.items.reduce((a, it) => a + it.qty * it.sr_rate, 0));
+            if (!s.companies.length) stops = stops.filter((x) => x !== s);
+            commitLocal();
+        }
+
+        /** Use the phone's copy when it holds changes the page (from cache, or behind the queue) does not show. */
+        async function restoreOfflineState() {
+            if (!offlineOk()) return;
+            const [snap, pending] = await Promise.all([window.HbOffline.kvGet(snapKey), window.HbOffline.count(HB_USER)]);
+            const fromCache = app.dataset.fromCache === '1';
+            if (snap && snap.date === selectedDate && (fromCache || pending > 0)) {
+                trip = snap.trip || null;
+                editable = !!trip?.editable;
+                tripSrIds = (trip?.sr_ids || []).map(Number);
+                stops = snap.stops || [];
+                vanStock = snap.vanStock || [];
+                if (Array.isArray(snap.damageProducts)) damageProducts = snap.damageProducts;
+                syncTripHeaderUi(false);
+                refreshDeliveryViews();
+            } else if (!fromCache) {
+                saveSnapshot();
+            }
+            if (fromCache && pending === 0 && navigator.onLine) refreshFromServer();
+        }
+
+        async function refreshFromServer() {
+            if (modalStack.length) { setTimeout(refreshFromServer, 5000); return; } // don't reset a stop being edited
+            try {
+                const res = await dsrApi('GET', `/dsr/delivery/state?date=${encodeURIComponent(selectedDate)}`);
+                if (!document.body.contains(app)) return;
+                applyState(res);
+            } catch { /* still offline */ }
         }
 
         function sortedStops() {
@@ -1012,7 +1415,10 @@
             if (rsDel) {
                 if (!window.confirm('এই রেডি সেলটি সরাবেন? পিসগুলো আবার ভ্যান স্টকে ফিরে যাবে।')) return;
                 try {
-                    const res = await withBusy(rsDel, '…', () => dsrApi('DELETE', `/dsr/ready-sales/${rsDel.getAttribute('data-ready-delete')}`));
+                    const res = await withBusy(rsDel, '…', () => dsrApi('DELETE', `/dsr/ready-sales/${rsDel.getAttribute('data-ready-delete')}`, undefined, {
+                        label: 'রেডি সেল মুছা',
+                        apply: () => { localDeleteReadySale(rsDel.getAttribute('data-ready-delete')); return {}; },
+                    }));
                     showToast(res.message);
                     applyState(res);
                     if (!stopById(activeId)) closeModal('deliveryOrderModal');
@@ -1249,9 +1655,11 @@
             const idx = Number(btn.getAttribute('data-damage-remove'));
             const nextList = draft.damages.filter((_, i) => i !== idx);
             try {
-                const res = await dsrApi('POST', '/dsr/damages', {
-                    retailer_id: Number(draft.id),
-                    items: nextList.map((d) => ({ product_id: Number(d.product_id), pcs: Number(d.pcs) })),
+                const sid = draft.id;
+                const items = nextList.map((d) => ({ product_id: Number(d.product_id), pcs: Number(d.pcs) }));
+                const res = await dsrApi('POST', '/dsr/damages', { retailer_id: rid(sid), items }, {
+                    label: `ড্যামেজ · ${draft.retailer_name}`,
+                    apply: () => { localDamages(sid, items); return {}; },
                 });
                 applyState(res);
                 showToast(res.message);
@@ -1337,8 +1745,11 @@
 
             try {
                 const res = await withBusy($('dmgApplyBtn'), 'সাবমিট হচ্ছে…', () => dsrApi('POST', '/dsr/damages', {
-                    retailer_id: Number(draft.id),
+                    retailer_id: rid(draft.id),
                     items,
+                }, {
+                    label: `ড্যামেজ · ${draft.retailer_name}`,
+                    apply: ((sid) => () => { localDamages(sid, items); return {}; })(draft.id),
                 }));
                 closeModal('damageCollectionModal');
                 applyState(res);
@@ -1353,7 +1764,10 @@
         $('doTopUndoBtn')?.addEventListener('click', async (e) => {
             if (!draft || !window.confirm('এই ডেলিভারি বাতিল করবেন? স্টপটি আবার বাকি অবস্থায় যাবে।')) return;
             try {
-                const res = await withBusy(e.currentTarget, 'পূর্বাবস্থায় ফিরছে…', () => dsrApi('POST', `/dsr/stops/${draft.id}/reset`));
+                const res = await withBusy(e.currentTarget, 'পূর্বাবস্থায় ফিরছে…', () => dsrApi('POST', `/dsr/stops/${draft.id}/reset`, undefined, {
+                    label: `ডেলিভারি পূর্বাবস্থা · ${draft.retailer_name}`,
+                    apply: ((sid) => () => { localResetStop(sid); return {}; })(draft.id),
+                }));
                 showToast(res.message);
                 applyState(res);
             } catch (err) { showToast(err.message); }
@@ -1399,7 +1813,10 @@
         }
 
         async function saveStop(paid, btn) {
-            const res = await withBusy(btn, 'সংরক্ষণ হচ্ছে…', () => dsrApi('POST', `/dsr/stops/${draft.id}`, payload(paid)));
+            const res = await withBusy(btn, 'সংরক্ষণ হচ্ছে…', () => dsrApi('POST', `/dsr/stops/${draft.id}`, payload(paid), {
+                label: `ডেলিভারি · ${draft.retailer_name}`,
+                apply: ((local) => () => { localSaveStop(local, paid); return {}; })(clone(draft)),
+            }));
             applyState(res);
             return res;
         }
@@ -1520,9 +1937,19 @@
                         dsrStore.retailers = retailers;
                         dsrStore.retailersSynced = true;
                         DsrBanglish.warmup(retailers, rsRetKey);
+                        if (offlineOk()) window.HbOffline.kvSet(`shops:${HB_USER}`, res.retailers);
                     }
                 })
-                .catch(() => {
+                .catch(async () => {
+                    // offline: use the list saved last time
+                    const saved = offlineOk() ? await window.HbOffline.kvGet(`shops:${HB_USER}`) : null;
+                    if (Array.isArray(saved) && saved.length) {
+                        const map = new Map(saved.map((r) => [String(r.id), r]));
+                        retailers.forEach((ex) => { if (!map.has(String(ex.id))) map.set(String(ex.id), ex); });
+                        retailers = Array.from(map.values());
+                        dsrStore.retailers = retailers;
+                        DsrBanglish.warmup(retailers, rsRetKey);
+                    }
                     dsrStore.retailersSynced = true;
                 })
                 .finally(() => {
@@ -2318,7 +2745,7 @@
                     err.hidden = false;
                     return;
                 }
-                body.retailer_id = Number(rsSelectedRetailer.id);
+                body.retailer_id = rid(rsSelectedRetailer.id);
             } else {
                 if (!rsNewShopDraft?.name) {
                     setRsStep(1);
@@ -2334,7 +2761,14 @@
             }
 
             try {
-                const res = await withBusy($('rsSubmitBtn'), 'বিক্রি সম্পন্ন হচ্ছে…', () => dsrApi('POST', '/dsr/ready-sales', body));
+                const res = await withBusy($('rsSubmitBtn'), 'বিক্রি সম্পন্ন হচ্ছে…', () => {
+                    const tmpId = body.mode === 'new' ? `tmp-${window.HbOffline?.uuid?.() || Date.now()}` : null;
+                    return dsrApi('POST', '/dsr/ready-sales', body, {
+                        label: `রেডি সেল · ${rsMode === 'new' ? body.name : (rsSelectedRetailer?.name || '')}`,
+                        tmp: tmpId,
+                        apply: () => localReadySale(body, tmpId),
+                    });
+                });
                 applyState(res);
                 showToast(res.message);
 
@@ -2407,6 +2841,8 @@
         }
 
         refreshDeliveryViews();
+        restoreOfflineState();
+        pageSyncedHook = () => { if (document.body.contains(app)) refreshFromServer(); };
     }
 
     // =========================================================================
@@ -2480,6 +2916,12 @@
             const msg = diff === 0
                 ? `${formatBdt(total)} ক্যাশ দিয়ে সেটেলমেন্ট জমা দেবেন?`
                 : `ক্যাশ ${formatBdt(Math.abs(diff))} ${diff < 0 ? 'কম' : 'বেশি'} আছে। তবুও জমা দেবেন?`;
+            if (offlineOk() && (!navigator.onLine || (await window.HbOffline.count(HB_USER)) > 0)) {
+                showToast('সেটেলমেন্টের আগে নেট চালু করে সব অফলাইন কাজ সিঙ্ক হতে দিন।');
+                window.alert('সেটেলমেন্টের আগে নেট চালু করে সব অফলাইন কাজ সিঙ্ক হতে দিন।');
+                syncOutbox();
+                return;
+            }
             if (!window.confirm(msg)) return;
             try {
                 const note = document.getElementById('dsrSettlementNote')?.value.trim() || '';
@@ -2552,8 +2994,16 @@
             const btn = e.target.closest('[data-delete-expense]');
             if (!btn || !window.confirm('এই খরচটি মুছে ফেলবেন?')) return;
             try {
-                const res = await dsrApi('DELETE', `/dsr/expenses/${btn.getAttribute('data-delete-expense')}`);
+                const eid = btn.getAttribute('data-delete-expense');
+                const res = await dsrApi('DELETE', `/dsr/expenses/${eid}`, undefined, {
+                    label: 'খরচ মুছা',
+                    apply: () => {
+                        if (isTmp(eid)) throw new Error('এই খরচটি এখনো সিঙ্ক হয়নি — সিঙ্ক হওয়ার পর মুছুন।');
+                        return { expenses: expenses.filter((x) => String(x.id) !== String(eid)) };
+                    },
+                });
                 expenses = res.expenses;
+                saveExpSnapshot();
                 renderExpenses();
                 showToast(res.message);
             } catch (err) { showToast(err.message); }
@@ -2573,8 +3023,17 @@
                 return;
             }
             try {
-                const res = await withBusy(document.getElementById('saveExpenseBtn'), 'সংরক্ষণ হচ্ছে…', () => dsrApi('POST', '/dsr/expenses', body));
+                const res = await withBusy(document.getElementById('saveExpenseBtn'), 'সংরক্ষণ হচ্ছে…', () => dsrApi('POST', '/dsr/expenses', body, {
+                    label: `খরচ · ${body.title}`,
+                    apply: () => {
+                        const now = new Date();
+                        const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                        return { expenses: [{ id: `tmp-${window.HbOffline.uuid()}`, title: body.title, category: body.category, amount: body.amount, note: body.note || null, time, date }, ...expenses] };
+                    },
+                }));
                 expenses = res.expenses;
+                saveExpSnapshot();
                 closeModal('addExpenseModal');
                 renderExpenses();
                 showToast(res.message);
@@ -2585,9 +3044,26 @@
         });
 
         renderExpenses();
+
+        function saveExpSnapshot() {
+            if (offlineOk()) window.HbOffline.kvSet(`exp:${HB_USER}`, expenses);
+        }
+        // Opened from the offline cache or with writes still queued: show the phone's copy.
+        if (offlineOk()) {
+            Promise.all([window.HbOffline.kvGet(`exp:${HB_USER}`), window.HbOffline.count(HB_USER)]).then(([snap, pending]) => {
+                if (Array.isArray(snap) && (app.dataset.fromCache === '1' || pending > 0)) {
+                    expenses = snap;
+                    renderExpenses();
+                } else if (app.dataset.fromCache !== '1') {
+                    saveExpSnapshot();
+                }
+            });
+        }
+        pageSyncedHook = () => { if (document.body.contains(app) && !modalStack.length) reloadCurrent(); };
     }
 
     function initPage() {
+        pageSyncedHook = null;
         initDeliveryPage();
         initVanStockPage();
         initSettlementPage();

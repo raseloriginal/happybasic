@@ -22,7 +22,7 @@ $isMapMode = ($activeNav ?? '') === 'delivery';
     <link rel="stylesheet" href="<?= e(asset('dsr/css/dsr.css')) ?>">
     <noscript><style>#appBootLoader{display:none!important;}</style></noscript>
 </head>
-<body>
+<body data-hb-user="<?= (int) ($currentDsr['user_id'] ?? 0) ?>">
 <div class="app-shell">
     <div class="app-loader" id="appBootLoader" role="status" aria-live="polite" aria-label="DSR অ্যাপ লোড হচ্ছে">
         <div class="app-loader-box">
@@ -72,6 +72,7 @@ $isMapMode = ($activeNav ?? '') === 'delivery';
 </div>
 
 <script src="<?= e(asset('vendor/leaflet/leaflet.js')) ?>"></script>
+<script src="<?= e(asset('shared/js/offline-store.js')) ?>"></script>
 <script src="<?= e(asset('shared/js/geo-filter.js')) ?>"></script>
 <script src="<?= e(asset('shared/js/map-tiles.js')) ?>"></script>
 <script src="<?= e(asset('dsr/js/dsr.js')) ?>"></script>

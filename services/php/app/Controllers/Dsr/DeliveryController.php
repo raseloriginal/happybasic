@@ -47,6 +47,12 @@ final class DeliveryController extends DsrController
         ]);
     }
 
+    /** Current CSRF token: the offline sync asks for it when the queued page's token has gone stale. */
+    public function csrf(): Response
+    {
+        return $this->action(fn(): array => ['token' => csrf_token()]);
+    }
+
     /** Fresh stops + van stock (optionally filtered by trip_date=YYYY-MM-DD). */
     public function state(?Request $request = null): Response
     {

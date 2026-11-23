@@ -36,6 +36,7 @@ if (!$hasTrip) {
 <section
     class="delivery-map-stage"
     id="dsrDeliveryApp"
+    data-from-cache="0"
     data-dsr-location="<?= e($dsrLocJson) ?>"
     data-dsr-photo="<?= e(!empty($currentDsr['photo_path']) ? url($currentDsr['photo_path']) : '') ?>"
     data-trip="<?= e($tripJson) ?>"
