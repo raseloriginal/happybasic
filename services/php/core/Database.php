@@ -36,6 +36,9 @@ final class Database
 
         $dsn = "{$driver}:host={$host};port={$port};dbname={$database};charset={$charset}";
         $this->pdo = new PDO($dsn, $username, $password, $this->defaultOptions());
+        // Use the app's timezone (APP_TIMEZONE) in MySQL too, whatever the DB server's own clock zone is:
+        // NOW()/CURDATE()/CURRENT_TIMESTAMP and TIMESTAMP columns then match PHP's date().
+        $this->pdo->exec("SET time_zone = '" . date('P') . "'");
     }
 
     private function __clone(): void
