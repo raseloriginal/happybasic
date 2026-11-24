@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS `partners` (
     `trade_license` VARCHAR(100) NULL,
     `nid` VARCHAR(50) NULL,
     `address` VARCHAR(255) NULL,
+    `attendance_token` VARCHAR(64) NULL DEFAULT NULL UNIQUE,
+    `office_lat` DECIMAL(10, 7) NULL DEFAULT NULL,
+    `office_lng` DECIMAL(10, 7) NULL DEFAULT NULL,
+    `office_radius_m` SMALLINT UNSIGNED NOT NULL DEFAULT 200,
+    `duty_start` TIME NOT NULL DEFAULT '09:00:00',
     `status` ENUM('active', 'pending', 'inactive') NOT NULL DEFAULT 'active',
     `deleted_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -210,6 +215,7 @@ CREATE TABLE IF NOT EXISTS `delivery_men` (
     `vehicle_no` VARCHAR(60) NULL,
     `photo_path` VARCHAR(255) NULL DEFAULT NULL,
     `salary` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    `daily_wage` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
     `deleted_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -555,4 +561,67 @@ CREATE TABLE IF NOT EXISTS `company_ledger` (
     INDEX `idx_company_ledger_lookup` (`partner_id`, `company_id`, `entry_date`),
     CONSTRAINT `fk_company_ledger_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_company_ledger_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dsr_attendance` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `partner_id` INT UNSIGNED NOT NULL,
+    `dsr_id` INT UNSIGNED NOT NULL,
+    `work_date` DATE NOT NULL,
+    `status` ENUM('present', 'half', 'absent', 'holiday') NOT NULL DEFAULT 'present',
+    `source` ENUM('qr', 'manual') NOT NULL DEFAULT 'qr',
+    `checked_in_at` TIMESTAMP NULL DEFAULT NULL,
+    `lat` DECIMAL(10, 7) NULL,
+    `lng` DECIMAL(10, 7) NULL,
+    `accuracy_m` INT UNSIGNED NULL,
+    `distance_m` INT UNSIGNED NULL,
+    `late_min` INT UNSIGNED NOT NULL DEFAULT 0,
+    UNIQUE KEY `uq_dsr_attendance_day` (`dsr_id`, `work_date`),
+    INDEX `idx_dsr_attendance_partner_day` (`partner_id`, `work_date`),
+    CONSTRAINT `fk_dsr_attendance_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_dsr_attendance_dsr` FOREIGN KEY (`dsr_id`) REFERENCES `delivery_men` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dsr_advances` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `partner_id` INT UNSIGNED NOT NULL,
+    `dsr_id` INT UNSIGNED NOT NULL,
+    `amount` DECIMAL(12, 2) NOT NULL,
+    `given_on` DATE NOT NULL,
+    `note` VARCHAR(255) NULL,
+    `created_by` INT UNSIGNED NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_dsr_advances_dsr_date` (`dsr_id`, `given_on`),
+    CONSTRAINT `fk_dsr_advances_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_dsr_advances_dsr` FOREIGN KEY (`dsr_id`) REFERENCES `delivery_men` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dsr_salary_payments` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `partner_id` INT UNSIGNED NOT NULL,
+    `dsr_id` INT UNSIGNED NOT NULL,
+    `pay_month` CHAR(7) NOT NULL,
+    `amount` DECIMAL(12, 2) NOT NULL,
+    `paid_on` DATE NOT NULL,
+    `note` VARCHAR(255) NULL,
+    `created_by` INT UNSIGNED NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_dsr_salary_dsr_month` (`dsr_id`, `pay_month`),
+    CONSTRAINT `fk_dsr_salary_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_dsr_salary_dsr` FOREIGN KEY (`dsr_id`) REFERENCES `delivery_men` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dsr_adjustments` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `partner_id` INT UNSIGNED NOT NULL,
+    `dsr_id` INT UNSIGNED NOT NULL,
+    `kind` ENUM('short', 'over') NOT NULL,
+    `amount` DECIMAL(12, 2) NOT NULL,
+    `adj_date` DATE NOT NULL,
+    `note` VARCHAR(255) NULL,
+    `created_by` INT UNSIGNED NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_dsr_adjustments_dsr_date` (`dsr_id`, `adj_date`),
+    CONSTRAINT `fk_dsr_adjustments_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_dsr_adjustments_dsr` FOREIGN KEY (`dsr_id`) REFERENCES `delivery_men` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

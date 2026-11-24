@@ -85,7 +85,6 @@ $lotProducts = array_map(static fn(array $p): array => [
         <div class="modal-head">
             <div>
                 <h2 id="addLotModalTitle" class="section-title">নতুন লট যোগ করুন</h2>
-                <p class="section-subtitle">পিস সংখ্যা এবং প্রতি পিসের কোম্পানি ক্রয়মূল্য লিখুন</p>
             </div>
             <button type="button" class="icon-btn" data-modal-close aria-label="বন্ধ করুন">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>

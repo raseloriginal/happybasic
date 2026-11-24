@@ -45,7 +45,7 @@ $netOc = (float) $dsStats['oc'];
     <div class="sr-prof-body">
         <!-- Date Navigator -->
         <div class="card date-nav-bar date-nav-rich">
-            <button type="button" class="icon-btn icon-btn-round" id="profPrevBtn" aria-label="আগের দিন">&lt;</button>
+            <button type="button" class="icon-btn icon-btn-round" id="profPrevBtn" aria-label="আগের দিন"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
 
             <label class="date-nav-center date-nav-col" for="profDateInput" title="তারিখ নির্বাচন করুন">
                 <strong id="profDateDisplay"><?= e(Bn::date($date)) ?><?= $date === $today ? ' (আজ)' : '' ?></strong>
@@ -53,7 +53,7 @@ $netOc = (float) $dsStats['oc'];
                 <input type="date" id="profDateInput" value="<?= e($date) ?>" max="<?= e($today) ?>" class="date-hidden-input" aria-label="তারিখ নির্বাচন করুন">
             </label>
 
-            <button type="button" class="icon-btn icon-btn-round" id="profNextBtn" aria-label="পরের দিন" <?= $date >= $today ? 'disabled' : '' ?>>&gt;</button>
+            <button type="button" class="icon-btn icon-btn-round" id="profNextBtn" aria-label="পরের দিন" <?= $date >= $today ? 'disabled' : '' ?>><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
         </div>
 
         <!-- Order Summary Card -->

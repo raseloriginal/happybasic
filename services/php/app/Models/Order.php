@@ -58,9 +58,10 @@ final class Order
      * @param list<array{product_id:int, pcs:int, total:float}> $items
      * @return array{order:array<string, mixed>, warnings:list<string>}
      */
-    public static function save(array $sr, int $retailerId, array $items, ?int $orderId = null): array
+    public static function save(array $sr, int $retailerId, array $items, ?int $orderId = null, ?int $at = null): array
     {
-        $date = date('Y-m-d');
+        $at ??= time();
+        $date = date('Y-m-d', $at);
         if (self::isDayCompleted($sr['id'], $date)) {
             throw new HttpError("Today's orders are already completed. Reopen the day to change orders.", 422);
         }
@@ -137,17 +138,17 @@ final class Order
         $srTotal = round(array_sum(array_column($lines, 'total')), 2);
         $oc = round(array_sum(array_column($lines, 'oc')), 2);
 
-        $id = self::db()->transaction(static function (Database $db) use ($sr, $retailer, $existing, $lines, $baseTotal, $srTotal, $oc, $date): int {
+        $id = self::db()->transaction(static function (Database $db) use ($sr, $retailer, $existing, $lines, $baseTotal, $srTotal, $oc, $date, $at): int {
             if ($existing === null) {
                 $db->execute(
                     "INSERT INTO orders (order_code, partner_id, company_id, sr_id, retailer_id, retailer_name_snapshot, order_date,
-                        order_base_total, order_sr_total, order_oc, platform_fee_rate, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        order_base_total, order_sr_total, order_oc, platform_fee_rate, status, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
                     ['TMP-' . bin2hex(random_bytes(8)), $sr['partner_id'], $sr['company_id'], $sr['id'], $retailer['id'], $retailer['name'], $date,
-                        $baseTotal, $srTotal, $oc, PlatformFee::rateAt($sr['partner_id'], $sr['company_id'])]
+                        $baseTotal, $srTotal, $oc, PlatformFee::rateAt($sr['partner_id'], $sr['company_id']), date('Y-m-d H:i:s', $at)]
                 );
                 $id = (int) $db->lastInsertId();
-                $db->execute('UPDATE orders SET order_code = ? WHERE id = ?', ['ORD-' . date('ymd') . '-' . str_pad((string) $id, 5, '0', STR_PAD_LEFT), $id]);
+                $db->execute('UPDATE orders SET order_code = ? WHERE id = ?', ['ORD-' . date('ymd', $at) . '-' . str_pad((string) $id, 5, '0', STR_PAD_LEFT), $id]);
             } else {
                 $id = (int) $existing['id'];
                 $db->execute(

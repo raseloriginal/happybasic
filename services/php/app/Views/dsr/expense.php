@@ -22,6 +22,7 @@ $catMapJson = json_encode($catMap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS |
 
 <?php $this->section('content'); ?>
 <section class="dsr-page-stack" id="dsrExpenseApp" data-from-cache="0" data-expenses="<?= e($expensesJson) ?>" data-cat-labels="<?= e($catMapJson) ?>" data-locked="<?= $locked ? '1' : '0' ?>">
+    <?php $this->include('dsr.partials.date_nav', ['selectedDate' => $selectedDate ?? null]); ?>
     <?php if ($trip === null): ?>
         <article class="card empty-trip-card"><h2 class="section-title">কোনো ডিসপ্যাচ করা ট্রিপ নেই</h2></article>
     <?php elseif (!$trip['editable']): ?>

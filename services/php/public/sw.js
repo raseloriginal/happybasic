@@ -3,8 +3,8 @@
 const TILES = 'hb-tiles-v2';   // v2: drops Esri 'no data' tiles cached by v1
 const ASSETS = 'hb-assets-v1';
 const PAGES = 'hb-pages-v1';
-// DSR app pages kept for offline use (network first; the copy is used when the network is down or very slow).
-const PAGE_PATH = /\/dsr(\/(dashboard|delivery|van-stock|settlement|expense))?\/?$/;
+// DSR and SR app pages kept for offline use (network first; the copy is used when the network is down or very slow).
+const PAGE_PATH = /\/(dsr(\/(dashboard|delivery|van-stock|settlement|expense|attendance))?|sr(\/(dashboard|order|history|profile))?)\/?$/;
 const PAGE_TIMEOUT_MS = 6000;
 const TILE_HOSTS = /^(mt\d\.google\.com|server\.arcgisonline\.com)$/;
 const TILE_MAX = 4000;                    // entries

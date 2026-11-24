@@ -54,6 +54,12 @@ final class OrderController extends Controller
         });
     }
 
+    /** Current CSRF token: the offline sync asks for it when the page's token has gone stale. */
+    public function csrf(): Response
+    {
+        return $this->action(fn(): array => ['token' => csrf_token()]);
+    }
+
     public function day(): Response
     {
         return $this->action(fn(): array => ['day' => Order::srDay(SrAuthMiddleware::sr(), date('Y-m-d'))]);
@@ -106,21 +112,22 @@ final class OrderController extends Controller
         });
     }
 
-    public function complete(): Response
+    public function complete(Request $request): Response
     {
-        return $this->action(function (): array {
+        return $this->action(function () use ($request): array {
             $sr = SrAuthMiddleware::sr();
-            Order::completeDay($sr, date('Y-m-d'));
-            ActivityLog::record('Updated', 'Order', "SR {$sr['name']} completed orders of " . date('Y-m-d'), $sr['user_id']);
+            $date = date('Y-m-d', $this->workTime($request));
+            Order::completeDay($sr, $date);
+            ActivityLog::record('Updated', 'Order', "SR {$sr['name']} completed orders of {$date}", $sr['user_id']);
             return ['message' => 'আজকের অর্ডার সম্পন্ন হয়েছে এবং ডেলিভারি ট্রিপের জন্য প্রস্তুত।', 'day' => Order::srDay($sr, date('Y-m-d'))];
         });
     }
 
-    public function reopen(): Response
+    public function reopen(Request $request): Response
     {
-        return $this->action(function (): array {
+        return $this->action(function () use ($request): array {
             $sr = SrAuthMiddleware::sr();
-            Order::reopenDay($sr, date('Y-m-d'));
+            Order::reopenDay($sr, date('Y-m-d', $this->workTime($request)));
             return ['message' => 'আজকের দিন পুনরায় খোলা হয়েছে। এখন অর্ডার যোগ বা পরিবর্তন করতে পারবেন।', 'day' => Order::srDay($sr, date('Y-m-d'))];
         });
     }
@@ -145,7 +152,7 @@ final class OrderController extends Controller
                 throw new HttpError('একটি দোকান নির্বাচন করুন।', 422);
             }
 
-            $res = Order::save($sr, $retailerId, $items, $orderId);
+            $res = Order::save($sr, $retailerId, $items, $orderId, $this->workTime($request));
             ActivityLog::record($orderId ? 'Updated' : 'Created', 'Order', ($orderId ? 'Updated' : 'Placed') . " order {$res['order']['code']} for {$res['order']['retailer']}", $sr['user_id']);
 
             return [
@@ -155,6 +162,19 @@ final class OrderController extends Controller
                 'day' => Order::srDay($sr, date('Y-m-d')),
             ];
         });
+    }
+
+    /**
+     * When the SR actually did the work (unix seconds sent by the phone). An order taken offline keeps the day and
+     * time it was taken, not the moment it reached the server. Anything outside the last 3 days / the near future
+     * (wrong phone clock) falls back to the server's time.
+     */
+    private function workTime(Request $request): int
+    {
+        $at = (int) $request->input('at', 0);
+        $now = time();
+
+        return $at > 0 && $at <= $now + 300 && $at >= $now - 3 * 86400 ? $at : $now;
     }
 
     /** @return list<array<string, mixed>> SR's company products that have a price (received through a lot) */

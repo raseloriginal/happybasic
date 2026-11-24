@@ -23,7 +23,33 @@
         return home.replace(/\/sr\/dashboard$/, '') + path;
     }
 
-    async function srApi(method, path, body) {
+    // ---------------------------------------------------------------- offline
+    // Writes that support offline (`offline` arg of srApi) are queued in IndexedDB when there is no network,
+    // applied to the screen right away, and sent in order once the network is back. Each op carries an
+    // X-Op-Id; the server answers a repeated op from its stored result, so nothing is applied twice.
+    class NetErr extends Error {}
+    const HB_USER = document.body.dataset.hbUser || '0';
+    const offlineOk = () => !!window.HbOffline?.available() && HB_USER !== '0';
+    /** Body value for a retailer id: shops created offline keep their temporary string id until synced. */
+    const rid = (id) => (String(id).startsWith('tmp-') ? String(id) : Number(id));
+    const isTmp = (id) => String(id).startsWith('tmp-');
+    const nowSec = () => Math.floor(Date.now() / 1000);
+    const mapKey = `srmap:${HB_USER}`;
+    let pageSyncedHook = null; // set by the current page; called after queued ops reached the server
+
+    /** Temporary ids (shop / order made offline) that already got their real id: swap them before sending. */
+    async function resolveTmp(path, body) {
+        if (body instanceof FormData || !JSON.stringify({ path, body: body ?? null }).includes('tmp-')) return { path, body };
+        const map = (await window.HbOffline.kvGet(mapKey)) || {};
+        let raw = JSON.stringify({ path, body: body ?? null });
+        Object.entries(map).forEach(([t, r]) => { raw = raw.split(t).join(r); });
+        const out = JSON.parse(raw);
+        return { path: out.path, body: body === undefined ? undefined : out.body };
+    }
+
+    async function rawSend(method, path, body, opId, timeoutMs) {
+        const ctrl = timeoutMs ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
         let res;
         try {
             res = await fetch(appUrl(path), {
@@ -34,21 +60,203 @@
                     ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
                     'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': csrfToken(),
+                    ...(opId ? { 'X-Op-Id': opId } : {}),
                 },
                 body: body === undefined ? undefined : (body instanceof FormData ? body : JSON.stringify(body)),
+                signal: ctrl?.signal,
             });
         } catch {
-            throw new Error('নেটওয়ার্ক সমস্যা। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।');
+            throw new NetErr('নেটওয়ার্ক সমস্যা। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।');
+        } finally {
+            if (timer) clearTimeout(timer);
         }
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON */ }
+        return { res, data };
+    }
+
+    /**
+     * @param {{label:string, apply:function():object, tmp?:string}=} offline  when given, the write is queued
+     *        instead of failing if the network is down; `apply` makes the same change on screen right away.
+     */
+    async function srApi(method, path, body, offline) {
+        const canQueue = !!offline && offlineOk();
+        const opId = canQueue ? window.HbOffline.uuid() : null;
+        // Keep order: while older ops wait in the queue, new ones go behind them.
+        if (canQueue && (!navigator.onLine || (await window.HbOffline.count(HB_USER)) > 0)) {
+            return queueOp(opId, method, path, body, offline);
+        }
+        if (canQueue) ({ path, body } = await resolveTmp(path, body));
+        let r;
+        try {
+            r = await rawSend(method, path, body, opId, canQueue ? 15000 : 0);
+        } catch (err) {
+            if (canQueue && err instanceof NetErr) return queueOp(opId, method, path, body, offline);
+            throw err;
+        }
+        const { res, data } = r;
         if (res.status === 401) {
             window.location.href = data.redirect || appUrl('/sr/login');
-            throw new Error('সেশন শেষ হয়েছে।');
+            throw new Error('সেশন শেষ হয়েছে।');
         }
-        if (res.status === 419) throw new Error('সেশন মেয়াদ শেষ। অনুগ্রহ করে পেজ রিলোড করুন।');
-        if (!res.ok || data.ok === false) throw new Error(data.message || `অনুরোধ ব্যর্থ হয়েছে (HTTP ${bnDigits(res.status)})।`);
+        if (res.status === 419) throw new Error('সেশন মেয়াদ শেষ। অনুগ্রহ করে পেজ রিলোড করুন।');
+        if (!res.ok || data.ok === false) throw new Error(data.message || `অনুরোধ ব্যর্থ হয়েছে (HTTP ${bnDigits(res.status)})।`);
         return data;
+    }
+
+    async function queueOp(id, method, path, body, offline) {
+        const result = offline.apply() || {}; // may throw (e.g. day already completed) → nothing is queued
+        await window.HbOffline.enqueue({ id, user: HB_USER, method, path, body, label: offline.label, tmp: offline.tmp || null });
+        scheduleSync(1500);
+        return { ...result, queued: true, message: 'অফলাইনে সংরক্ষিত — নেট পেলে নিজে থেকে সিঙ্ক হবে।' };
+    }
+
+    let syncing = false;
+    let syncTimer = null;
+    function scheduleSync(ms) {
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(syncOutbox, ms);
+    }
+
+    async function refreshCsrf() {
+        try {
+            const { res, data } = await rawSend('GET', '/sr/csrf', undefined, null, 15000);
+            if (!res.ok || !data.token) return false;
+            document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', data.token);
+            return true;
+        } catch { return false; }
+    }
+
+    /** A shop / order made offline got its real id: rewrite the ops still waiting that refer to it, and remember it. */
+    async function remapTmp(tmp, real, rest) {
+        const map = (await window.HbOffline.kvGet(mapKey)) || {};
+        map[tmp] = real;
+        await window.HbOffline.kvSet(mapKey, map);
+        for (const op of rest) {
+            const before = JSON.stringify({ path: op.path, body: op.body ?? null });
+            if (!before.includes(tmp)) continue;
+            const after = JSON.parse(before.split(tmp).join(real));
+            await window.HbOffline.put({ ...op, path: after.path, body: op.body === undefined ? undefined : after.body });
+        }
+        srStore.retailers.forEach((r) => { if (String(r.id) === tmp) r.id = real; });
+    }
+
+    async function syncOutbox() {
+        if (syncing || !offlineOk() || !navigator.onLine) return;
+        syncing = true;
+        renderSyncPill();
+        let synced = 0;
+        let csrfRetried = false;
+        try {
+            for (;;) {
+                const ops = await window.HbOffline.list(HB_USER);
+                if (!ops.length) break;
+                const op = ops[0];
+                let r;
+                try {
+                    r = await rawSend(op.method, op.path, op.body, op.id, 30000);
+                } catch {
+                    scheduleSync(30000); // still no network — try again later
+                    break;
+                }
+                const { res, data } = r;
+                if (res.status === 419 && !csrfRetried) {
+                    csrfRetried = true;
+                    if (await refreshCsrf()) continue;
+                }
+                if (res.status === 401 || res.status === 419) {
+                    showToast('সিঙ্কের জন্য আবার লগইন করুন — অফলাইনের কাজগুলো রাখা আছে।');
+                    break;
+                }
+                if (res.status >= 500 || res.status === 429) {
+                    scheduleSync(60000);
+                    break;
+                }
+                if (res.ok && data.ok !== false) {
+                    const real = data.retailer?.id ?? data.order?.id;
+                    if (op.tmp && real) await remapTmp(op.tmp, String(real), ops.slice(1));
+                } else {
+                    // The server refused it (e.g. day already assigned to a trip): keep a record for the user.
+                    await window.HbOffline.addFailed(HB_USER, { label: op.label, message: data.message || `HTTP ${res.status}`, at: op.at });
+                }
+                await window.HbOffline.remove(op.seq);
+                synced += 1;
+            }
+        } finally {
+            syncing = false;
+            renderSyncPill();
+        }
+        if (synced > 0) {
+            showToast(`${bnDigits(synced)}টি অফলাইন কাজ সিঙ্ক হয়েছে।`);
+            if ((await window.HbOffline.count(HB_USER)) === 0) pageSyncedHook?.();
+        }
+    }
+
+    // Sync status pill (offline / waiting / syncing / failed)
+    const syncPill = document.createElement('button');
+    syncPill.type = 'button';
+    syncPill.className = 'hb-sync-pill';
+    syncPill.hidden = true;
+    document.body.appendChild(syncPill);
+    async function renderSyncPill() {
+        if (!offlineOk()) return;
+        const [ops, failed] = await Promise.all([window.HbOffline.list(HB_USER), window.HbOffline.failed(HB_USER)]);
+        const n = ops.length;
+        let text = '';
+        let tone = '';
+        if (failed.length) { text = `⚠ ${bnDigits(failed.length)}টি কাজ সিঙ্ক হয়নি — দেখুন`; tone = 'is-failed'; }
+        else if (syncing && n) { text = `সিঙ্ক হচ্ছে… (${bnDigits(n)})`; tone = 'is-syncing'; }
+        else if (n) { text = `${navigator.onLine ? '' : 'অফলাইন · '}${bnDigits(n)}টি কাজ সিঙ্ক বাকি`; tone = 'is-waiting'; }
+        else if (!navigator.onLine) { text = 'অফলাইন মোড'; tone = 'is-offline'; }
+        syncPill.hidden = !text;
+        syncPill.textContent = text;
+        syncPill.className = `hb-sync-pill ${tone}`;
+    }
+    syncPill.addEventListener('click', async () => {
+        const failed = await window.HbOffline.failed(HB_USER);
+        if (failed.length) {
+            window.alert(`এই কাজগুলো সার্ভার গ্রহণ করেনি, আবার করতে হবে:\n\n${failed.map((f) => `• ${f.label}: ${f.message}`).join('\n')}`);
+            await window.HbOffline.clearFailed(HB_USER);
+            return;
+        }
+        syncOutbox();
+    });
+    if (offlineOk()) {
+        window.addEventListener('hb-outbox-change', renderSyncPill);
+        window.addEventListener('online', () => { renderSyncPill(); syncOutbox(); });
+        window.addEventListener('offline', renderSyncPill);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncOutbox(); });
+        renderSyncPill();
+        scheduleSync(800);
+    }
+
+    // Logout: warn about unsynced work; forget cached pages/data of this user on this phone.
+    document.addEventListener('submit', async (e) => {
+        const f = e.target;
+        if (!(f instanceof HTMLFormElement) || !/\/sr\/logout$/.test(f.getAttribute('action') || '') || f.dataset.confirmed) return;
+        if (!offlineOk()) return;
+        e.preventDefault();
+        const n = await window.HbOffline.count(HB_USER);
+        if (n > 0 && !window.confirm(`${bnDigits(n)}টি অফলাইন কাজ এখনো সিঙ্ক হয়নি। সাইন আউট করলেও সেগুলো এই ফোনে থাকবে এবং আবার লগইন করলে সিঙ্ক হবে। সাইন আউট করবেন?`)) return;
+        await Promise.all([window.HbOffline.kvDel(`sr:${HB_USER}`), window.HbOffline.kvDel(`srshops:${HB_USER}`), window.HbOffline.kvDel(mapKey), window.caches?.delete('hb-pages-v1')]);
+        f.dataset.confirmed = '1';
+        f.submit();
+    }, true);
+
+    // Keep every SR page in the offline cache (once per session, in the background). Marked done only when the
+    // Service Worker controlled the requests and every page came back.
+    if (offlineOk() && navigator.serviceWorker && navigator.onLine) {
+        const warm = async () => {
+            try { if (sessionStorage.getItem('hb-sr-warm')) return; } catch { /* private mode */ }
+            if (!navigator.serviceWorker.controller || !navigator.onLine) return;
+            let ok = true;
+            for (const p of ['/sr/order', '/sr/dashboard', '/sr/history', '/sr/profile']) {
+                try { ok = (await fetch(appUrl(p), { credentials: 'same-origin' })).ok && ok; } catch { ok = false; }
+            }
+            if (ok) try { sessionStorage.setItem('hb-sr-warm', '1'); } catch { /* private mode */ }
+        };
+        navigator.serviceWorker.ready.then(() => setTimeout(warm, 2500)).catch(() => {});
+        navigator.serviceWorker.addEventListener('controllerchange', () => setTimeout(warm, 1000));
     }
 
     function destroyOrderMap() {
@@ -796,9 +1004,13 @@
                 .then((res) => {
                     if (Array.isArray(res?.retailers)) {
                         mergeRetailerDirectory(res.retailers);
+                        saveShops();
                     }
                 })
-                .catch(() => {
+                .catch(async () => {
+                    // offline: the directory saved on the phone
+                    const saved = offlineOk() ? await window.HbOffline.kvGet(shopsKey) : null;
+                    if (Array.isArray(saved) && saved.length) mergeRetailerDirectory(saved);
                     srStore.retailersSynced = true;
                 })
                 .finally(() => {
@@ -2162,13 +2374,18 @@
 
             let res;
             try {
+                const editingId = activeOrderId;
+                const orderBody = {
+                    retailer_id: rid(activeOrderRetailer.id),
+                    items: items.map((it) => ({ product_id: Number(it.productId), pcs: itemPcs(it), total: it.total })),
+                    at: nowSec(),
+                };
+                const tmpId = editingId ? null : `tmp-${window.HbOffline?.uuid?.() || Date.now()}`;
                 res = await withButtonLoading(confirmOrderBtn, 'সংরক্ষণ হচ্ছে…', () => srApi(
-                    activeOrderId ? 'PUT' : 'POST',
-                    activeOrderId ? `/sr/orders/${activeOrderId}` : '/sr/orders',
-                    {
-                        retailer_id: Number(activeOrderRetailer.id),
-                        items: items.map((it) => ({ product_id: Number(it.productId), pcs: itemPcs(it), total: it.total })),
-                    }
+                    editingId ? 'PUT' : 'POST',
+                    editingId ? `/sr/orders/${editingId}` : '/sr/orders',
+                    orderBody,
+                    { label: `অর্ডার · ${activeOrderRetailer.name}`, tmp: tmpId, apply: () => localSaveOrder(orderBody, editingId, tmpId) }
                 ));
             } catch (err) {
                 showToast(err.message);
@@ -2201,7 +2418,10 @@
             }
             if (lastConfirmedOrder.wasNew) {
                 try {
-                    const res = await withButtonLoading(undoConfirmedOrderBtn, 'ফিরিয়ে নেওয়া হচ্ছে…', () => srApi('DELETE', `/sr/orders/${lastConfirmedOrder.orderId}`));
+                    const res = await withButtonLoading(undoConfirmedOrderBtn, 'ফিরিয়ে নেওয়া হচ্ছে…', () => srApi('DELETE', `/sr/orders/${lastConfirmedOrder.orderId}`, undefined, {
+                        label: 'অর্ডার বাতিল',
+                        apply: () => localCancelOrder(lastConfirmedOrder.orderId),
+                    }));
                     setDay(res.day);
                 } catch (err) {
                     showToast(err.message);
@@ -2308,8 +2528,12 @@
             const distFromSr = haversineMeters(srLoc.lat, srLoc.lng, lat, lng);
             let newRetailer;
             try {
-                const res = await withButtonLoading(saveBtn, 'সংরক্ষণ হচ্ছে…', () => srApi('POST', '/sr/retailers', {
-                    name, address: locationText, lat, lng,
+                const retBody = { name, address: locationText, lat, lng };
+                const tmpRet = `tmp-${window.HbOffline?.uuid?.() || Date.now()}`;
+                const res = await withButtonLoading(saveBtn, 'সংরক্ষণ হচ্ছে…', () => srApi('POST', '/sr/retailers', retBody, {
+                    label: `নতুন দোকান · ${name}`,
+                    tmp: tmpRet,
+                    apply: () => localAddRetailer(retBody, tmpRet),
                 }));
                 newRetailer = res.retailer;
             } catch (err) {
@@ -2320,6 +2544,7 @@
                 return;
             }
             srStore.retailers.unshift(newRetailer);
+            saveShops();
             focusedRetailerId = newRetailer.id;
 
             resetAddRetailerForm();
@@ -2344,6 +2569,166 @@
         const todayBtnLabel = document.getElementById('todayBtnLabel');
         const completeDayBtn = document.getElementById('completeDayBtn');
         const reopenDayBtn = document.getElementById('reopenDayBtn');
+
+        // ------------------------------------------------------- offline: local copies of server changes
+        // Used only while a write waits in the offline queue. They mirror Order::save / cancel / completeDay on the
+        // server closely enough for the screen; once the queue is synced the server's own data replaces them.
+        const snapKey = `sr:${HB_USER}`;
+        const shopsKey = `srshops:${HB_USER}`;
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+        const emptyDay = (date) => ({ date, completed: false, locked: false, orders: [], totals: { orders: 0, value: 0, oc: 0 } });
+        const timeLabel = () => { const d = new Date(); const h = d.getHours(); return `${pad2(h % 12 || 12)}:${pad2(d.getMinutes())} ${h >= 12 ? 'PM' : 'AM'}`; };
+
+        function saveSnapshot() {
+            if (offlineOk()) window.HbOffline.kvSet(snapKey, { date: day.date, day, products: catalogProducts, at: Date.now() });
+        }
+        function saveShops() {
+            if (offlineOk()) window.HbOffline.kvSet(shopsKey, srStore.retailers);
+        }
+
+        /** A new calendar day began while the page was open / cached: today starts empty. */
+        function ensureToday() {
+            const today = localToday();
+            if (day.date !== today) day = emptyDay(today);
+        }
+
+        function recomputeDay() {
+            day.totals = {
+                orders: day.orders.length,
+                value: round2(day.orders.reduce((s, o) => s + o.sr_total, 0)),
+                oc: round2(day.orders.reduce((s, o) => s + o.oc, 0)),
+            };
+            day.locked = day.orders.some((o) => !o.editable);
+        }
+
+        function localSaveOrder(body, orderId, tmpId) {
+            ensureToday();
+            if (day.completed) throw new Error('আজকের অর্ডার সম্পন্ন হয়েছে। পরিবর্তন করতে "আজ" থেকে দিনটি পুনরায় খুলুন।');
+            const ret = srStore.retailers.find((r) => String(r.id) === String(body.retailer_id));
+            if (!ret) throw new Error('একটি দোকান নির্বাচন করুন।');
+            if (!body.items.length) throw new Error('অন্তত একটি পণ্য যোগ করুন।');
+            const existing = orderId != null
+                ? day.orders.find((o) => String(o.id) === String(orderId))
+                : orderForRetailer(body.retailer_id);
+            if (existing && !existing.editable) throw new Error(`${ret.name}-এর অর্ডারটি ইতিমধ্যেই ট্রিপে দেওয়া হয়েছে।`);
+
+            const frozen = {};
+            const own = {};
+            (existing?.items || []).forEach((it) => { frozen[String(it.product_id)] = it.base_rate_pc; own[String(it.product_id)] = it.pcs; });
+            const warnings = [];
+            const items = body.items.map((it) => {
+                const p = catalogProducts.find((x) => String(x.id) === String(it.product_id));
+                if (!p) throw new Error('একটি পণ্য আর পাওয়া যাচ্ছে না। পেজ রিলোড করে আবার চেষ্টা করুন।');
+                const pcs = Math.floor(Number(it.pcs));
+                const total = round2(it.total);
+                const base = frozen[String(p.id)] ?? Number(p.pc_price);
+                const qpu = Math.max(1, Number(p.qty_per_unit || 1));
+                const available = Number(p.available_pcs ?? Infinity) + (own[String(p.id)] || 0);
+                if (pcs > available) warnings.push(`${p.name}: ordered ${pcs} pcs, only ${Math.max(0, available)} pcs in stock.`);
+                return {
+                    product_id: Number(p.id), name: p.name, unit_type: p.unit_type, qty_per_unit: qpu, pcs,
+                    qty: `${Math.floor(pcs / qpu)} ${p.unit_type} ${pcs % qpu} pcs`, delivered_pcs: 0,
+                    base_rate_pc: base, sr_rate_pc: Math.round((total / pcs) * 10000) / 10000, total, oc: round2(total - pcs * base),
+                    image: p.image, code: p.code, tint: p.tint,
+                };
+            });
+            const order = {
+                ...(existing || {}),
+                id: existing ? existing.id : tmpId,
+                code: existing ? existing.code : 'সিঙ্ক বাকি',
+                date: day.date,
+                time: existing ? existing.time : timeLabel(),
+                retailer_id: ret.id,
+                retailer: ret.name,
+                retailer_address: ret.address || null,
+                retailer_phone: ret.phone || null,
+                trip: null,
+                base_total: round2(items.reduce((s, i) => s + i.pcs * i.base_rate_pc, 0)),
+                sr_total: round2(items.reduce((s, i) => s + i.total, 0)),
+                oc: round2(items.reduce((s, i) => s + i.oc, 0)),
+                status: 'Pending',
+                status_key: 'pending',
+                editable: true,
+                items,
+            };
+            day.orders = existing ? day.orders.map((o) => (o === existing ? order : o)) : [order, ...day.orders];
+            recomputeDay();
+            saveSnapshot();
+            return { order, warnings, day };
+        }
+
+        function localCancelOrder(orderId) {
+            const o = day.orders.find((x) => String(x.id) === String(orderId));
+            if (!o) throw new Error('অর্ডারটি পাওয়া যায়নি।');
+            if (!o.editable) throw new Error('এই অর্ডারটি ইতিমধ্যে ট্রিপে দেওয়া হয়েছে, বাতিল করা যাবে না।');
+            if (day.completed) throw new Error('সম্পন্ন দিনের অর্ডার বাতিল করা যায় না। আগে দিনটি পুনরায় খুলুন।');
+            day.orders = day.orders.filter((x) => x !== o);
+            recomputeDay();
+            saveSnapshot();
+            return { day };
+        }
+
+        function localCompleteDay() {
+            ensureToday();
+            if (!day.orders.length) throw new Error('সম্পন্ন করার মতো কোনো অর্ডার নেই।');
+            day.completed = true;
+            saveSnapshot();
+            return { day };
+        }
+
+        function localReopenDay() {
+            if (day.orders.some((o) => !o.editable)) throw new Error('এই দিনের অর্ডার ইতিমধ্যে ট্রিপে দেওয়া হয়েছে, তাই দিনটি খোলা যাবে না।');
+            day.completed = false;
+            saveSnapshot();
+            return { day };
+        }
+
+        function localAddRetailer(body, tmpId) {
+            const dup = srStore.retailers.find((r) => r.name === body.name && Math.abs(Number(r.lat) - body.lat) < 0.0003 && Math.abs(Number(r.lng) - body.lng) < 0.0003);
+            if (dup) throw new Error(`"${body.name}" এই লোকেশনে আগেই নিবন্ধিত আছে।`);
+            return { retailer: { id: tmpId, name: body.name, phone: '', address: body.address, lat: body.lat, lng: body.lng, sr_id: null, due: 0 } };
+        }
+
+        /** Use the phone's copy when it holds changes the page (from cache, or behind the queue) does not show. */
+        async function restoreOfflineState() {
+            if (!offlineOk()) return;
+            const [snap, shops, pending] = await Promise.all([window.HbOffline.kvGet(snapKey), window.HbOffline.kvGet(shopsKey), window.HbOffline.count(HB_USER)]);
+            const fromCache = app.dataset.fromCache === '1';
+            if (fromCache || pending > 0) {
+                if (snap && snap.date === localToday()) {
+                    day = snap.day;
+                    if (Array.isArray(snap.products) && snap.products.length) catalogProducts.splice(0, catalogProducts.length, ...snap.products);
+                } else if (fromCache) {
+                    ensureToday();
+                }
+                if (Array.isArray(shops) && shops.length) mergeRetailerDirectory(shops);
+                setDay(day);
+            } else {
+                saveSnapshot();
+            }
+            if (fromCache && pending === 0 && navigator.onLine) refreshFromServer();
+        }
+
+        /** After the queue reached the server: replace the local guesses (temporary ids, order codes) by the server's data. */
+        async function refreshFromServer() {
+            if (modalStack.length) { setTimeout(refreshFromServer, 5000); return; } // don't reset a cart being edited
+            try {
+                const [d, s] = await Promise.all([srApi('GET', '/sr/orders/today'), srApi('GET', '/sr/retailers')]);
+                if (!document.body.contains(app)) return;
+                if (Array.isArray(s?.retailers)) {
+                    srStore.retailers = s.retailers;
+                    srStore.retailersSynced = true;
+                    BanglishSearch.warmup(srStore.retailers, retKey);
+                    saveShops();
+                }
+                if (d?.day) {
+                    day = d.day;
+                    saveSnapshot();
+                }
+                setDay(day);
+            } catch { /* still offline */ }
+        }
 
         function setDay(next) {
             day = next || day;
@@ -2391,7 +2776,10 @@
         async function cancelOrder(orderId, btn) {
             if (!window.confirm('এই অর্ডারটি বাতিল করবেন?')) return false;
             try {
-                const res = await withButtonLoading(btn, 'বাতিল হচ্ছে…', () => srApi('DELETE', `/sr/orders/${orderId}`));
+                const res = await withButtonLoading(btn, 'বাতিল হচ্ছে…', () => srApi('DELETE', `/sr/orders/${orderId}`, undefined, {
+                    label: 'অর্ডার বাতিল',
+                    apply: () => localCancelOrder(orderId),
+                }));
                 showToast(res.message);
                 setDay(res.day);
                 return true;
@@ -2432,7 +2820,10 @@
         completeDayBtn?.addEventListener('click', async () => {
             if (!window.confirm('আজকের অর্ডার সম্পন্ন করবেন? দিনটি পুনরায় না খোলা পর্যন্ত নতুন অর্ডার যোগ বা পরিবর্তন করা যাবে না।')) return;
             try {
-                const res = await withButtonLoading(completeDayBtn, 'সম্পন্ন হচ্ছে…', () => srApi('POST', '/sr/orders/complete'));
+                const res = await withButtonLoading(completeDayBtn, 'সম্পন্ন হচ্ছে…', () => srApi('POST', '/sr/orders/complete', { at: nowSec() }, {
+                    label: 'আজকের অর্ডার সম্পন্ন',
+                    apply: () => localCompleteDay(),
+                }));
                 showToast(res.message);
                 setDay(res.day);
             } catch (err) { showToast(err.message); }
@@ -2440,13 +2831,18 @@
 
         reopenDayBtn?.addEventListener('click', async () => {
             try {
-                const res = await withButtonLoading(reopenDayBtn, 'খোলা হচ্ছে…', () => srApi('POST', '/sr/orders/reopen'));
+                const res = await withButtonLoading(reopenDayBtn, 'খোলা হচ্ছে…', () => srApi('POST', '/sr/orders/reopen', { at: nowSec() }, {
+                    label: 'দিন পুনরায় খোলা',
+                    apply: () => localReopenDay(),
+                }));
                 showToast(res.message);
                 setDay(res.day);
             } catch (err) { showToast(err.message); }
         });
 
         setDay(day);
+        restoreOfflineState();
+        pageSyncedHook = refreshFromServer;
 
         // =====================================================================
         // LIVE GPS: keep the 50m circle on the SR's real position
@@ -2460,6 +2856,7 @@
                 srLoc.lat = pos.lat;
                 srLoc.lng = pos.lng;
                 srStore.gpsFix = true;
+                if (first) window.HbMapTiles?.prefetch?.(pos.lat, pos.lng);
                 refreshOrderView();
                 if (first && hasLeaflet && activeLeafletMap) activeLeafletMap.setView([srLoc.lat, srLoc.lng], 18);
             }, () => {
@@ -2946,6 +3343,7 @@
     }
 
     function initPage() {
+        pageSyncedHook = null;
         initOrderPage();
         initProfilePage();
         initHistoryPage();

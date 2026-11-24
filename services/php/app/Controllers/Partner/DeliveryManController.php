@@ -84,6 +84,7 @@ final class DeliveryManController extends PartnerController
             'name' => 'required|string|max:120',
             'number' => 'required|string|max:30',
             'salary' => 'required|numeric',
+            'daily_wage' => 'nullable|numeric',
         ];
         if ($creating) {
             $rules['password'] = $this->passwordRule(true);
@@ -95,10 +96,16 @@ final class DeliveryManController extends PartnerController
             throw new HttpError('বেতন ০ থেকে ৯৯,৯৯,৯৯৯-এর মধ্যে হতে হবে।', 422, ['salary' => ['সঠিক বেতন দিন।']]);
         }
 
+        $wage = (float) ($data['daily_wage'] ?? 0);
+        if ($wage < 0 || $wage > 999999) {
+            throw new HttpError('দৈনিক মজুরি সঠিক নয়।', 422, ['daily_wage' => ['সঠিক দৈনিক মজুরি দিন।']]);
+        }
+
         return [
             'name' => (string) $data['name'],
             'phone' => $this->phone($data),
             'salary' => round($salary, 2),
+            'daily_wage' => round($wage, 2),
             'password' => $creating ? (string) $data['password'] : null,
             'status' => $creating ? 'active' : $this->statusFrom($request),
         ];

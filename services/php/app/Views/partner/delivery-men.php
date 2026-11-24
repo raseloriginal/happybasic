@@ -45,6 +45,10 @@
                     <strong class="tabular"><?= Bn::money((float) $dsr['salary']) ?>/মাস</strong>
                 </div>
                 <div class="staff-meta-row">
+                    <span class="muted small">দৈনিক মজুরি</span>
+                    <strong class="tabular"><?= Bn::money((float) $dsr['daily_wage'], true) ?>/দিন</strong>
+                </div>
+                <div class="staff-meta-row">
                     <span class="muted small">মোবাইল</span>
                     <strong class="tabular"><?= e(Bn::digits($dsr['number'])) ?></strong>
                 </div>
@@ -86,6 +90,10 @@
                 <div class="form-group">
                     <label for="dsr_name">নাম <span class="req">*</span></label>
                     <input id="dsr_name" name="name" type="text" placeholder="যেমন: রুবেল মিয়া" maxlength="120" required>
+                </div>
+                <div class="form-group">
+                    <label for="dsr_daily_wage">দৈনিক মজুরি (৳ / দিন)</label>
+                    <input id="dsr_daily_wage" name="daily_wage" type="number" min="0" step="0.01" placeholder="যেমন: ৫০০ — হাজিরা অনুযায়ী মজুরি এটা দিয়ে হিসাব হবে">
                 </div>
                 <div class="form-grid">
                     <div class="form-group">
@@ -142,7 +150,6 @@
                         <button type="button" class="input-action-btn" data-toggle-input-pw="dsr_new_password">দেখুন</button>
                     </div>
                 </div>
-                <p class="muted small" style="margin:0">এতে DSR সব ডিভাইস থেকে লগ আউট হয়ে যাবেন।</p>
             </div>
             <div class="modal-error" data-form-error hidden></div>
             <div class="modal-foot">

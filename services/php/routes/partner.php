@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Controllers\PanelAuthController;
+use App\Controllers\Partner\AttendanceController;
 use App\Controllers\Partner\CompanyLedgerController;
 use App\Controllers\Partner\DashboardController;
 use App\Controllers\Partner\DayClosingController;
 use App\Controllers\Partner\DeliveryManController;
+use App\Controllers\Partner\DsrMonitorController;
 use App\Controllers\Partner\LotController;
 use App\Controllers\Partner\OrderController;
 use App\Controllers\Partner\ProductController;
@@ -57,6 +59,15 @@ $router->group(['prefix' => 'partner', 'middleware' => [CsrfMiddleware::class]],
         $router->delete('/company-ledger/{id:\d+}', [CompanyLedgerController::class, 'destroy']);
 
         $router->get('/orders', [OrderController::class, 'index'])->name('partner.orders');
+
+        $router->get('/attendance', [AttendanceController::class, 'index'])->name('partner.attendance');
+        $router->post('/attendance/settings', [AttendanceController::class, 'save']);
+        $router->post('/attendance/regenerate', [AttendanceController::class, 'regenerate']);
+
+        $router->get('/dsr-monitor', [DsrMonitorController::class, 'index'])->name('partner.dsr-monitor');
+        $router->post('/dsr-monitor/{id:\d+}/entries', [DsrMonitorController::class, 'addEntry']);
+        $router->post('/dsr-monitor/{id:\d+}/days', [DsrMonitorController::class, 'setDay']);
+        $router->delete('/dsr-monitor/entries/{kind}/{entry:\d+}', [DsrMonitorController::class, 'destroyEntry']);
 
         $router->get('/delivery-men', [DeliveryManController::class, 'index'])->name('partner.delivery-men');
         $router->post('/delivery-men', [DeliveryManController::class, 'store']);

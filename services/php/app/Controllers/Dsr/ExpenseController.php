@@ -12,12 +12,13 @@ final class ExpenseController extends DsrController
 {
     public function index(): Response
     {
-        $trip = $this->trip();
+        $trip = $this->viewTrip();
 
         return $this->view('dsr.expense', [
             'title' => 'খরচ',
             'activeNav' => 'expense',
             'trip' => $trip,
+            'selectedDate' => $this->viewDate($trip),
             'expenses' => $trip ? DsrDelivery::expenses($trip['id']) : [],
             'categories' => DsrDelivery::EXPENSE_CATEGORIES,
         ]);

@@ -19,7 +19,7 @@
     </header>
 
     <div class="card date-nav-bar date-nav-rich">
-        <button type="button" class="icon-btn icon-btn-round" id="historyPrevBtn" aria-label="আগের দিন">&lt;</button>
+        <button type="button" class="icon-btn icon-btn-round" id="historyPrevBtn" aria-label="আগের দিন"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
 
         <label class="date-nav-center date-nav-col" for="historyDateInput" title="তারিখ নির্বাচন করুন">
             <strong id="historyDateDisplay"><?= e(Bn::date($date)) ?></strong>
@@ -29,7 +29,7 @@
             <input type="date" id="historyDateInput" value="<?= e($date) ?>" max="<?= e($today) ?>" class="date-hidden-input" aria-label="তারিখ নির্বাচন করুন">
         </label>
 
-        <button type="button" class="icon-btn icon-btn-round" id="historyNextBtn" aria-label="পরের দিন">&gt;</button>
+        <button type="button" class="icon-btn icon-btn-round" id="historyNextBtn" aria-label="পরের দিন"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
     </div>
 
     <div class="history-list" id="historyList"></div>

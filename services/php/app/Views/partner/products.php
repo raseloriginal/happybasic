@@ -114,7 +114,6 @@
         <div class="modal-head">
             <div>
                 <h2 id="productModalTitle" class="section-title">নতুন পণ্য যোগ করুন</h2>
-                <p class="section-subtitle">কোম্পানি মূল্য লট থেকে আসে · ডিলার মূল্য = কোম্পানি মূল্য + মার্জিন %</p>
             </div>
             <button type="button" class="icon-btn" data-modal-close aria-label="বন্ধ করুন">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>

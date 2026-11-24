@@ -33,7 +33,7 @@
             current.once('tileload', done);
         };
 
-        el?.classList.add('hb-map-loading');
+        if (navigator.onLine) el?.classList.add('hb-map-loading'); // offline: no skeleton, pins and the live position show at once
         current.once('tileload', done);
         current.on('tileerror', useBackup);
         timer = setTimeout(() => { if (el?.classList.contains('hb-map-loading')) useBackup(); }, SLOW_MS);
@@ -48,5 +48,48 @@
         if (base) navigator.serviceWorker.register(`${base}/sw.js`).catch(() => { /* needs https or localhost */ });
     }
 
-    window.HbMapTiles = { attach };
+    // ---- keep the map around the user on the device, so the map (and the moving pin on it) works without network.
+    // About 160 tiles (~1 km square at street zoom), the same tiles the user would see by panning around there.
+    const PF_AREAS = [[18, 4], [17, 3], [16, 2], [15, 1]]; // [zoom, tiles each side of the centre]
+    const tileX = (lng, z) => Math.floor(((lng + 180) / 360) * 2 ** z);
+    const tileY = (lat, z) => {
+        const r = (lat * Math.PI) / 180;
+        return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z);
+    };
+    const metres = (aLat, aLng, bLat, bLng) => {
+        const k = 111320;
+        return Math.hypot((aLat - bLat) * k, (aLng - bLng) * k * Math.cos((aLat * Math.PI) / 180));
+    };
+
+    function prefetch(lat, lng) {
+        if (!navigator.onLine || navigator.connection?.saveData || !navigator.serviceWorker?.controller) return;
+        let last = null;
+        try { last = JSON.parse(localStorage.getItem('hb-tile-pf') || 'null'); } catch { /* private mode */ }
+        if (last && Date.now() - last.at < 7 * 864e5 && metres(last.lat, last.lng, lat, lng) < 400) return;
+        try { localStorage.setItem('hb-tile-pf', JSON.stringify({ lat, lng, at: Date.now() })); } catch { /* private mode */ }
+
+        const urls = [];
+        PF_AREAS.forEach(([z, n]) => {
+            const cx = tileX(lng, z);
+            const cy = tileY(lat, z);
+            for (let dx = -n; dx <= n; dx++) {
+                for (let dy = -n; dy <= n; dy++) {
+                    const x = cx + dx;
+                    const y = cy + dy;
+                    urls.push(`https://mt${Math.abs(x + y) % 4}.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}`); // same url Leaflet asks for
+                }
+            }
+        });
+        let next = 0;
+        const worker = () => {
+            if (next >= urls.length || !navigator.onLine) return;
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = img.onerror = () => setTimeout(worker, 40);
+            img.src = urls[next++];
+        };
+        setTimeout(() => { for (let i = 0; i < 5; i++) worker(); }, 4000); // after the map itself has loaded
+    }
+
+    window.HbMapTiles = { attach, prefetch };
 })();

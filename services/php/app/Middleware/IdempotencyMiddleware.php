@@ -65,6 +65,10 @@ final class IdempotencyMiddleware
 
     private static function userId(): int
     {
-        return (int) DsrAuthMiddleware::dsr()['user_id'];
+        try {
+            return (int) SrAuthMiddleware::sr()['user_id'];
+        } catch (\LogicException) {
+            return (int) DsrAuthMiddleware::dsr()['user_id'];
+        }
     }
 }

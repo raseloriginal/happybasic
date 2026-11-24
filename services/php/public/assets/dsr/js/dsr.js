@@ -3062,12 +3062,122 @@
         pageSyncedHook = () => { if (document.body.contains(app) && !modalStack.length) reloadCurrent(); };
     }
 
+    // ---------------------------------------------------------------- attendance (QR scan + location)
+    function initAttendancePage() {
+        const app = document.getElementById('dsrAttendanceApp');
+        if (!app || app.dataset.bound) return;
+        app.dataset.bound = '1';
+        const msg = document.getElementById('attMsg');
+        const say = (text, bad) => { msg.hidden = !text; msg.textContent = text || ''; msg.classList.toggle('is-bad', !!bad); };
+        let busy = false;
+        let stream = null;
+
+        const stopCamera = () => {
+            stream?.getTracks().forEach((t) => t.stop());
+            stream = null;
+            document.getElementById('attVideoWrap')?.setAttribute('hidden', '');
+        };
+
+        const position = () => new Promise((resolve) => {
+            if (!navigator.geolocation) { resolve(null); return; }
+            navigator.geolocation.getCurrentPosition(
+                (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+                () => resolve(null),
+                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+            );
+        });
+
+        async function checkIn(token) {
+            if (busy) return;
+            busy = true;
+            stopCamera();
+            say('লোকেশন যাচাই হচ্ছে…');
+            try {
+                const pos = await position();
+                const res = await dsrApi('POST', '/dsr/attendance', { token, ...(pos || {}) });
+                say(res.message);
+                showToast(res.message);
+                app.dataset.done = '1';
+                setTimeout(() => navigateTo(appUrl('/dsr/attendance'), false), 1200);
+            } catch (err) {
+                say(err.message, true);
+            } finally {
+                busy = false;
+            }
+        }
+
+        const tokenFrom = (text) => {
+            try { return new URL(text, window.location.origin).searchParams.get('t') || ''; } catch { return ''; }
+        };
+
+        const loadJsQr = () => new Promise((resolve) => {
+            if (typeof window.jsQR === 'function') { resolve(true); return; }
+            const tag = document.createElement('script');
+            tag.src = appUrl('/assets/vendor/jsqr/jsQR.js');
+            tag.onload = () => resolve(typeof window.jsQR === 'function');
+            tag.onerror = () => resolve(false);
+            document.head.appendChild(tag);
+        });
+
+        async function scan() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                say('ক্যামেরা চালু করা যাচ্ছে না (নিরাপদ HTTPS সংযোগ দরকার)। ফোনের ক্যামেরা অ্যাপ দিয়ে QR স্ক্যান করুন।', true);
+                return;
+            }
+            const native = 'BarcodeDetector' in window;
+            if (!native && !(await loadJsQr())) {
+                say('QR পড়ার লাইব্রেরি লোড হয়নি। ইন্টারনেট দেখে আবার চেষ্টা করুন।', true);
+                return;
+            }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            } catch {
+                say('ক্যামেরার অনুমতি পাওয়া যায়নি।', true);
+                return;
+            }
+            const video = document.getElementById('attVideo');
+            video.srcObject = stream;
+            document.getElementById('attVideoWrap').hidden = false;
+            await video.play().catch(() => {});
+            const detector = native ? new window.BarcodeDetector({ formats: ['qr_code'] }) : null;
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            say('QR কোডটি ক্যামেরার সামনে ধরুন…');
+            const loop = async () => {
+                if (!stream) return;
+                try {
+                    let raw = '';
+                    if (detector) {
+                        const found = await detector.detect(video);
+                        raw = found.length ? found[0].rawValue : '';
+                    } else if (video.videoWidth) {
+                        const w = Math.min(video.videoWidth, 640);
+                        canvas.width = w;
+                        canvas.height = Math.round(video.videoHeight * w / video.videoWidth);
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        raw = window.jsQR(img.data, img.width, img.height)?.data || '';
+                    }
+                    const t = raw ? tokenFrom(raw) : '';
+                    if (t) { checkIn(t); return; }
+                } catch { /* keep trying */ }
+                setTimeout(loop, 250);
+            };
+            loop();
+        }
+
+        document.getElementById('attScanBtn')?.addEventListener('click', scan);
+        // Opened from the QR link on the phone camera: check in right away.
+        if (app.dataset.token && app.dataset.done !== '1') checkIn(app.dataset.token);
+    }
+
     function initPage() {
         pageSyncedHook = null;
         initDeliveryPage();
         initVanStockPage();
         initSettlementPage();
         initExpensePage();
+        initAttendancePage();
     }
 
     // SPA Navigation
@@ -3092,7 +3202,7 @@
         if (appMainEl) appMainEl.classList.toggle('is-map-mode', activeKey === 'delivery');
     }
 
-    async function navigateTo(href, pushHistory = true) {
+    async function navigateTo(href, pushHistory = true, keepScroll = false) {
         if (!contentEl) {
             window.location.href = href;
             return;
@@ -3142,7 +3252,7 @@
             }
             syncActiveNav(new URL(res.url || href, window.location.origin).pathname);
             initPage();
-            window.scrollTo({ top: 0, behavior: 'auto' });
+            if (!keepScroll) window.scrollTo({ top: 0, behavior: 'auto' });
         } catch (err) {
             if (err && err.name === 'AbortError') return;
             window.location.href = href;
@@ -3174,6 +3284,32 @@
             return;
         }
         navigateTo(url.href, true);
+    });
+
+    // Date bar shared by the dashboard / van stock / expense / settlement / attendance pages.
+    function goToDate(iso) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set('date', iso);
+        url.searchParams.delete('t');
+        navigateTo(url.href, true, true);
+    }
+    document.addEventListener('click', (e) => {
+        const nav = e.target.closest('[data-date-nav]');
+        if (!nav) return;
+        const input = nav.querySelector('[data-date-input]');
+        const shift = e.target.closest('[data-date-shift]');
+        const today = e.target.closest('[data-date-today]');
+        if (shift && input?.value) {
+            const [y, m, d] = input.value.split('-').map(Number);
+            const dt = new Date(Date.UTC(y, m - 1, d + Number(shift.dataset.dateShift)));
+            goToDate(dt.toISOString().slice(0, 10));
+        } else if (today) {
+            goToDate(today.dataset.dateToday);
+        }
+    });
+    document.addEventListener('change', (e) => {
+        if (e.target.matches?.('[data-date-nav] [data-date-input]') && e.target.value) goToDate(e.target.value);
     });
 
     window.addEventListener('popstate', () => {

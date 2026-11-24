@@ -40,6 +40,7 @@ final class DeliveryMan
             'phone' => $r['phone'],
             'number' => Phone::format($r['phone']),
             'salary' => (float) $r['salary'],
+            'daily_wage' => (float) $r['daily_wage'],
             'photo' => !empty($r['photo_path']) ? url((string) $r['photo_path']) : null,
             'status' => Format::status($r['status']),
             'trips' => (int) ($r['trips'] ?? 0),
@@ -64,8 +65,8 @@ final class DeliveryMan
         return self::db()->transaction(static function (Database $db) use ($partnerId, $d): array {
             $userId = User::createAccount($d['name'], $d['phone'], $d['password'], 'dsr', $d['status']);
             $db->execute(
-                'INSERT INTO delivery_men (partner_id, user_id, name, phone, salary, status) VALUES (?, ?, ?, ?, ?, ?)',
-                [$partnerId, $userId, $d['name'], $d['phone'], $d['salary'], $d['status']]
+                'INSERT INTO delivery_men (partner_id, user_id, name, phone, salary, daily_wage, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [$partnerId, $userId, $d['name'], $d['phone'], $d['salary'], $d['daily_wage'], $d['status']]
             );
 
             return self::findOrFail($partnerId, (int) $db->lastInsertId());
@@ -80,8 +81,8 @@ final class DeliveryMan
         return self::db()->transaction(static function (Database $db) use ($partnerId, $id, $d, $current): array {
             User::syncAccount((int) $current['user_id'], $d['name'], $d['phone'], $d['status'], $d['password'] ?? null);
             $db->execute(
-                'UPDATE delivery_men SET name = ?, phone = ?, salary = ?, status = ? WHERE id = ?',
-                [$d['name'], $d['phone'], $d['salary'], $d['status'], $id]
+                'UPDATE delivery_men SET name = ?, phone = ?, salary = ?, daily_wage = ?, status = ? WHERE id = ?',
+                [$d['name'], $d['phone'], $d['salary'], $d['daily_wage'], $d['status'], $id]
             );
 
             return self::findOrFail($partnerId, $id);

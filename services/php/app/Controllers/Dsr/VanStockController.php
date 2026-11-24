@@ -11,12 +11,13 @@ final class VanStockController extends DsrController
 {
     public function index(): Response
     {
-        $trip = $this->trip();
+        $trip = $this->viewTrip();
 
         return $this->view('dsr.van_stock', [
             'title' => 'ভ্যান স্টক',
             'activeNav' => 'van_stock',
             'trip' => $trip,
+            'selectedDate' => $this->viewDate($trip),
             'products' => $trip ? array_values(DsrDelivery::vanStock($trip['id'])) : [],
         ]);
     }

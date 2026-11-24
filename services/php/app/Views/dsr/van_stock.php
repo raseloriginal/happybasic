@@ -20,6 +20,7 @@ $productsJson = json_encode($list, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS |
 
 <?php $this->section('content'); ?>
 <section class="dsr-page-stack" id="dsrVanStockApp" data-van-stock="<?= e($productsJson) ?>">
+    <?php $this->include('dsr.partials.date_nav', ['selectedDate' => $selectedDate ?? null]); ?>
     <?php if ($trip === null): ?>
         <article class="card empty-trip-card"><h2 class="section-title">কোনো ডিসপ্যাচ করা ট্রিপ নেই</h2></article>
     <?php endif; ?>

@@ -42,6 +42,7 @@
             form.elements.status.value = dsr ? dsr.status : 'Active';
             form.elements.name.value = dsr ? dsr.name : '';
             form.elements.salary.value = dsr ? dsr.salary : '';
+            form.elements.daily_wage.value = dsr ? dsr.daily_wage : '';
             form.elements.number.value = dsr ? dsr.phone : '';
             form.querySelector('[data-create-only]').hidden = !!dsr;
             document.getElementById('dsrModalTitle').textContent = dsr ? `সম্পাদনা: ${dsr.name}` : 'ডেলিভারিম্যান (DSR) যোগ করুন';
@@ -85,6 +86,7 @@
             const body = {
                 name: String(fd.get('name') || '').trim(),
                 salary: fd.get('salary'),
+                daily_wage: fd.get('daily_wage'),
                 number: String(fd.get('number') || '').trim(),
                 status: fd.get('status'),
             };

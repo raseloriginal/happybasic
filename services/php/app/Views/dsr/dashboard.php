@@ -19,6 +19,7 @@ $sum = $settlement ?? [];
 
 <?php $this->section('content'); ?>
 <section class="dsr-dash-stack" id="dsrDashboardApp">
+    <?php $this->include('dsr.partials.date_nav', ['selectedDate' => $selectedDate ?? null]); ?>
     <?php if ($trip === null): ?>
         <article class="card empty-trip-card">
             <h2 class="section-title">কোনো ডিসপ্যাচ করা ট্রিপ নেই</h2>
@@ -68,6 +69,15 @@ $sum = $settlement ?? [];
     <?php endif; ?>
 
     <div class="quick-links-grid">
+        <a href="<?= e(url('/dsr/attendance' . (($selectedDate ?? date('Y-m-d')) !== date('Y-m-d') ? '?date=' . $selectedDate : ''))) ?>" class="card quick-link-card">
+            <div class="quick-link-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M20 20h-3v-3"/></svg>
+            </div>
+            <div class="quick-link-body">
+                <strong>হাজিরা — <?= $attendance ? (($selectedDate ?? date('Y-m-d')) === date('Y-m-d') ? 'আজ ' : '') . e(Bn::time($attendance['checked_in_at'])) . '-এ সম্পন্ন' : 'QR স্ক্যান করুন' ?></strong>
+            </div>
+            <span class="quick-arrow">→</span>
+        </a>
         <a href="<?= e(url('/dsr/delivery')) ?>" class="card quick-link-card">
             <div class="quick-link-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>

@@ -8,6 +8,7 @@ use App\Controllers\Sr\HistoryController;
 use App\Controllers\Sr\OrderController;
 use App\Controllers\Sr\ProfileController;
 use App\Middleware\CsrfMiddleware;
+use App\Middleware\IdempotencyMiddleware;
 use App\Middleware\SrAuthMiddleware;
 use Core\Router;
 
@@ -18,10 +19,11 @@ $router->group(['prefix' => 'sr', 'middleware' => [CsrfMiddleware::class]], stat
     $router->post('/login', [PanelAuthController::class, 'srLogin']);
     $router->post('/logout', [PanelAuthController::class, 'srLogout'])->name('sr.logout');
 
-    $router->group(['middleware' => [SrAuthMiddleware::class]], static function (Router $router): void {
+    $router->group(['middleware' => [SrAuthMiddleware::class, IdempotencyMiddleware::class]], static function (Router $router): void {
         $router->get('/', [OrderController::class, 'index'])->name('sr.index');
         $router->get('/order', [OrderController::class, 'index'])->name('sr.order');
         $router->get('/retailers', [OrderController::class, 'retailers']);
+        $router->get('/csrf', [OrderController::class, 'csrf']);
         $router->get('/orders/today', [OrderController::class, 'day']);
         $router->post('/retailers', [OrderController::class, 'storeRetailer']);
         $router->post('/orders', [OrderController::class, 'store']);

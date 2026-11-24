@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers\Dsr;
 
 use App\Models\DsrDelivery;
+use App\Models\DsrMonitor;
 use App\Models\TripSettlement;
 use Core\Response;
 
@@ -12,7 +13,8 @@ final class DashboardController extends DsrController
 {
     public function index(): Response
     {
-        $trip = $this->trip();
+        $trip = $this->viewTrip();
+        $date = $this->viewDate($trip);
         $stops = $trip ? DsrDelivery::stops($trip) : [];
         $byStatus = array_count_values(array_column($stops, 'status'));
         $van = $trip ? DsrDelivery::vanStock($trip['id']) : [];
@@ -21,6 +23,7 @@ final class DashboardController extends DsrController
             'title' => 'ড্যাশবোর্ড',
             'activeNav' => 'dashboard',
             'trip' => $trip,
+            'attendance' => DsrMonitor::attendanceOn($this->dsr()['id'], $date),
             'stats' => [
                 'stops' => count($stops),
                 'delivered' => ($byStatus['Delivered'] ?? 0) + ($byStatus['Due'] ?? 0),

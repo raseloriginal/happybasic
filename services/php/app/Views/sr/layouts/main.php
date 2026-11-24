@@ -44,7 +44,7 @@ $hasCustomHeader = in_array($active, ['dashboard', 'order', 'history', 'profile'
     <link rel="stylesheet" href="<?= e(asset('sr/css/sr.css')) ?>">
     <noscript><style>#appBootLoader{display:none!important;}</style></noscript>
 </head>
-<body>
+<body data-hb-user="<?= (int) ($currentSr['user_id'] ?? 0) ?>">
 <div class="app-shell">
     <div class="app-loader" id="appBootLoader" role="status" aria-live="polite" aria-label="SR অ্যাপ লোড হচ্ছে">
         <div class="app-loader-box">
@@ -98,6 +98,7 @@ $hasCustomHeader = in_array($active, ['dashboard', 'order', 'history', 'profile'
 </div>
 
 <script src="<?= e(asset('vendor/leaflet/leaflet.js')) ?>"></script>
+<script src="<?= e(asset('shared/js/offline-store.js')) ?>"></script>
 <script src="<?= e(asset('shared/js/geo-filter.js')) ?>"></script>
 <script src="<?= e(asset('shared/js/map-tiles.js')) ?>"></script>
 <script src="<?= e(asset('sr/js/sr.js')) ?>"></script>

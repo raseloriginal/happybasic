@@ -2448,3 +2448,10 @@ a { color: inherit; }
 .hb-map-loading { background: linear-gradient(110deg, #e9edf1 30%, #f4f6f8 45%, #e9edf1 60%) 0 0 / 220% 100%; animation: hb-map-shimmer 1.4s linear infinite; }
 .hb-map-loading::after { content: "ম্যাপ লোড হচ্ছে…"; position: absolute; left: 50%; top: 38%; transform: translateX(-50%); z-index: 450; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: #475569; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12); pointer-events: none; }
 @keyframes hb-map-shimmer { to { background-position: -220% 0; } }
+
+.hb-sync-pill { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 8px); transform: translateX(-50%); z-index: 3000; border: 0; border-radius: 999px; padding: 6px 14px; font: 600 12.5px/1.2 inherit; color: #fff; background: #475569; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25); cursor: pointer; white-space: nowrap; max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis; }
+.hb-sync-pill[hidden] { display: none; }
+.hb-sync-pill.is-waiting { background: #d97706; }
+.hb-sync-pill.is-syncing { background: #2563eb; }
+.hb-sync-pill.is-failed { background: #dc2626; }
+.hb-sync-pill.is-offline { background: #475569; }

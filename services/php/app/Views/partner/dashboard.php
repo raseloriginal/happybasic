@@ -38,7 +38,6 @@ $range = $from === $to ? Bn::date($from) : Bn::date($from) . ' → ' . Bn::date(
     <article class="card kpi-card">
         <span class="kpi-label">মোট বাকি (Due)</span>
         <div class="kpi-value is-warn tabular"><?= Bn::money((float) $s['due']) ?></div>
-        <span class="muted small">দোকান থেকে আদায় বাকি</span>
     </article>
     <article class="card kpi-card">
         <span class="kpi-label">ট্রিপে না দেওয়া অর্ডার</span>
@@ -48,12 +47,10 @@ $range = $from === $to ? Bn::date($from) : Bn::date($from) . ' → ' . Bn::date(
     <article class="card kpi-card">
         <span class="kpi-label">লট ক্রয়</span>
         <div class="kpi-value tabular"><?= Bn::money((float) $s['purchases']) ?></div>
-        <span class="muted small">এই সময়ের মধ্যে প্রাপ্ত লট</span>
     </article>
     <article class="card kpi-card">
         <span class="kpi-label">বর্তমান স্টক মূল্য</span>
         <div class="kpi-value tabular"><?= Bn::money((float) $s['stock_value']) ?></div>
-        <span class="muted small">কোম্পানি ক্রয়মূল্যে অবশিষ্ট স্টক</span>
     </article>
 </section>
 
@@ -61,7 +58,6 @@ $range = $from === $to ? Bn::date($from) : Bn::date($from) . ' → ' . Bn::date(
     <div class="section-head">
         <div>
             <h2 class="section-title">ট্রিপসমূহ</h2>
-            <p class="section-subtitle">DSR অনুযায়ী দোকান ডেলিভারির অগ্রগতি (নির্ধারিত তারিখের মধ্যে)</p>
         </div>
         <a href="<?= e(url('/partner/trips')) ?>" class="text-link">সব ট্রিপ দেখুন →</a>
     </div>

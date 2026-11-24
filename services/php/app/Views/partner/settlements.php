@@ -14,7 +14,6 @@ $signed = static fn(float $v): string => Bn::signedMoney($v, true);
         <label class="date-field"><span class="muted small">পর্যন্ত</span><input type="date" name="to" value="<?= e($to) ?>" class="select-input"></label>
         <button type="submit" class="btn btn-secondary btn-sm">দেখুন</button>
     </div>
-    <span class="muted small">চলমান ও কনফার্ম বাকি ট্রিপগুলো সবসময় দেখানো হয়</span>
 </form>
 
 <?php if ($settlements === []): ?>

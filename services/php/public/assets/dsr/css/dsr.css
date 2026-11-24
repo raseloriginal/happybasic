@@ -2403,3 +2403,21 @@ input:focus, select:focus { border-color: var(--accent); }
 .hb-sync-pill.is-syncing { background: #2563eb; }
 .hb-sync-pill.is-failed { background: #dc2626; }
 .hb-sync-pill.is-offline { background: #475569; }
+
+.att-status-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.att-big { font-size: 24px; }
+.att-msg { margin: 6px 0 0; font-weight: 600; }
+.att-msg.is-bad { color: var(--danger-text, #b42318); }
+.att-scan-card { display: flex; flex-direction: column; gap: 10px; }
+.att-video-wrap video { width: 100%; max-height: 320px; border-radius: 12px; background: #000; object-fit: cover; }
+.att-days { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.att-day { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 8px; background: var(--surface-2, #f4f5f7); font-size: 14px; }
+.att-day.is-ok { background: #e7f6ec; }
+.att-day.is-late { background: #fff4d6; }
+.att-day.is-none { opacity: 0.6; }
+
+/* Date bar on DSR pages */
+.page-date-nav { position: sticky; top: 62px; z-index: 20; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08); display: flex; align-items: center; gap: 4px; height: 42px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+.page-date-nav .map-date-picker-label { justify-content: center; }
+.page-date-nav .date-hidden-input { font-size: 16px; }
+.page-date-today { border: 0; border-radius: 999px; background: #1d4ed8; color: #fff; font-size: 12px; font-weight: 700; padding: 0 12px; height: 34px; cursor: pointer; flex-shrink: 0; }

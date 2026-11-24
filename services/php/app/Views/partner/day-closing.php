@@ -190,7 +190,6 @@ if ($cnt['in_review'] > 0) {
             <?php if ($cnt['pending_trips'] > 0): ?>
                 <p class="muted small">এই তারিখে <?= Bn::num((int) $cnt['pending_trips']) ?>টি ট্রিপ এখনো ডিসপ্যাচ করা হয়নি। <a href="<?= e(url('/partner/trips')) ?>" class="text-link">ট্রিপ পেজে যান →</a></p>
             <?php else: ?>
-                <p class="muted small">অন্য তারিখ বেছে নিন অথবা উপরের সাম্প্রতিক দিন থেকে দেখুন।</p>
             <?php endif; ?>
         </div>
     <?php else: ?>
@@ -260,7 +259,6 @@ if ($cnt['in_review'] > 0) {
                     <div class="card-head">
                         <div>
                             <h2 class="section-title">টাকার হিসাব (ক্যাশ ফ্লো)</h2>
-                            <p class="section-subtitle">গুদাম থেকে মাল বের হওয়া থেকে হাতে নগদ আসা পর্যন্ত পূর্ণ সমন্বয়</p>
                         </div>
                         <span class="badge badge-neutral tabular"><?= Bn::num((int) $cnt['trips']) ?>টি ট্রিপ</span>
                     </div>
@@ -349,7 +347,6 @@ if ($cnt['in_review'] > 0) {
                     <div class="card-head dc-card-pad">
                         <div>
                             <h2 class="section-title">DM ও ট্রিপ অনুযায়ী হিসাব</h2>
-                            <p class="section-subtitle">প্রতিটি ডেলিভারিম্যানের মাল, ফেরত, বাকি, খরচ ও ক্যাশ জমার বিবরণ</p>
                         </div>
                         <a href="<?= e(url('/partner/settlements?from=' . $date . '&to=' . $date)) ?>" class="text-link">সেটেলমেন্ট →</a>
                     </div>
@@ -434,7 +431,6 @@ if ($cnt['in_review'] > 0) {
                     <div class="card-head">
                         <div>
                             <h2 class="section-title">আজকের লাভ-ক্ষতি</h2>
-                            <p class="section-subtitle">FIFO ক্রয়মূল্য ও খরচ অনুযায়ী নিট লাভ<?= $pnl['is_estimated'] ? ' (আনুমানিক)' : '' ?></p>
                         </div>
                         <span class="badge <?= $pnl['net_profit'] >= 0 ? 'badge-success' : 'badge-danger' ?> tabular">
                             মার্জিন <?= Bn::digits($pnl['margin_pct']) ?>%
@@ -499,7 +495,6 @@ if ($cnt['in_review'] > 0) {
                     <div class="card-head dc-card-pad">
                         <div>
                             <h2 class="section-title">SR ওভার / কমিশন</h2>
-                            <p class="section-subtitle">প্রতি SR-এর ডেলিভার্ড বিক্রি ও নিট O/C</p>
                         </div>
                         <span class="badge <?= $cash['sr_net_oc'] >= 0 ? 'badge-success' : 'badge-warning' ?> tabular">
                             <?= $signed((float) $cash['sr_net_oc']) ?>

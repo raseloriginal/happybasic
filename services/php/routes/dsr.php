@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\Dsr\AttendanceController;
 use App\Controllers\Dsr\DashboardController;
 use App\Controllers\Dsr\DeliveryController;
 use App\Controllers\Dsr\ExpenseController;
@@ -33,6 +34,9 @@ $router->group(['prefix' => 'dsr', 'middleware' => [CsrfMiddleware::class]], sta
         $router->post('/damages', [DeliveryController::class, 'saveDamages']);
         $router->post('/ready-sales', [DeliveryController::class, 'readySale']);
         $router->delete('/ready-sales/{id:\d+}', [DeliveryController::class, 'deleteReadySale']);
+
+        $router->get('/attendance', [AttendanceController::class, 'index'])->name('dsr.attendance');
+        $router->post('/attendance', [AttendanceController::class, 'checkIn']);
 
         $router->get('/van-stock', [VanStockController::class, 'index'])->name('dsr.van_stock');
 

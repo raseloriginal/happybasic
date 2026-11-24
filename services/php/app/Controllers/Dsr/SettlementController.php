@@ -12,12 +12,13 @@ final class SettlementController extends DsrController
 {
     public function index(): Response
     {
-        $trip = $this->trip();
+        $trip = $this->viewTrip();
 
         return $this->view('dsr.settlement', [
             'title' => 'সেটেলমেন্ট',
             'activeNav' => 'settlement',
             'trip' => $trip,
+            'selectedDate' => $this->viewDate($trip),
             'settlement' => $trip ? TripSettlement::compute($trip['id']) : null,
         ]);
     }

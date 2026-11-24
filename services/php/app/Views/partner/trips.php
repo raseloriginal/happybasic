@@ -38,7 +38,6 @@ $extraProducts = array_map(static fn(array $p): array => [
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                 </span>
                 <strong>+ নতুন ট্রিপ</strong>
-                <span class="muted small">SR-এর অর্ডার DSR-কে দিন</span>
             </button>
         </div>
     </section>
@@ -71,7 +70,6 @@ $extraProducts = array_map(static fn(array $p): array => [
                 <select id="extraProductSelect" class="select-input" aria-label="অতিরিক্ত পণ্য"></select>
                 <input type="number" id="extraProductPcs" class="select-input" min="1" step="1" placeholder="পিস" aria-label="অতিরিক্ত পিস">
                 <button type="button" class="btn btn-secondary btn-sm" id="addExtraBtn">+ পণ্য যোগ করুন</button>
-                <span class="muted small">রেডি সেলের জন্য ভ্যানে অতিরিক্ত পণ্য যোগ করুন</span>
             </div>
         </article>
     </section>
@@ -83,7 +81,6 @@ $extraProducts = array_map(static fn(array $p): array => [
         <div class="modal-head">
             <div>
                 <h2 id="newTripModalTitle" class="section-title">ট্রিপ তৈরি / যুক্ত করুন</h2>
-                <p class="section-subtitle">অর্ডার তারিখের SR অর্ডার নির্বাচন করে একটি DSR-এর ডেলিভারি ট্রিপে দিন</p>
             </div>
             <button type="button" class="icon-btn" data-modal-close aria-label="বন্ধ করুন">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -103,7 +100,6 @@ $extraProducts = array_map(static fn(array $p): array => [
                 <div class="picker-col">
                     <div class="picker-col-head">
                         <strong>ডেলিভারিম্যান (DSR)</strong>
-                        <span class="muted small">একজন নির্বাচন করুন</span>
                     </div>
                     <label class="picker-date"><span class="muted small">ডেলিভারি তারিখ</span><input type="date" id="tripDeliveryDate" class="select-input" value="<?= e(max($date, date('Y-m-d'))) ?>"></label>
                     <div class="picker-list" id="dsrPickerList"></div>

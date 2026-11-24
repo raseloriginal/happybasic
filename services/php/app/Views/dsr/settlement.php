@@ -37,6 +37,7 @@ $summaryJson = json_encode($sum, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | J
 <?php $this->section('content'); ?>
 <?php if ($openTrip === null): ?>
 <section class="dsr-page-stack">
+    <?php $this->include('dsr.partials.date_nav', ['selectedDate' => $selectedDate ?? null]); ?>
     <article class="card empty-trip-card"><h2 class="section-title">সেটেল করার মতো কোনো ট্রিপ নেই</h2></article>
 </section>
 <?php else: ?>
@@ -47,6 +48,7 @@ $summaryJson = json_encode($sum, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | J
     data-due-details="<?= e($dueDetailsJson) ?>"
     data-locked="<?= $locked ? '1' : '0' ?>"
 >
+    <?php $this->include('dsr.partials.date_nav', ['selectedDate' => $selectedDate ?? null]); ?>
     <?php if ($locked): ?>
         <div class="trip-state-banner is-inline">জমা দেওয়া হয়েছে<?= !empty($trip['submitted_at']) ? ' (' . e(Bn::dateTime((string) $trip['submitted_at'])) . ')' : '' ?> — পার্টনারের যাচাইয়ের অপেক্ষায়।</div>
     <?php elseif (($trip['settlement_status'] ?? null) === 'returned'): ?>

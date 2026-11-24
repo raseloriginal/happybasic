@@ -4,6 +4,7 @@
 <div
     class="order-map-stage"
     id="orderApp"
+    data-from-cache="0"
     data-fullscreen-map="1"
     data-sr-name="<?= e($currentSr['name'] ?? '') ?>"
     data-sr-photo="<?= e(!empty($currentSr['photo_path']) ? url($currentSr['photo_path']) : '') ?>"
