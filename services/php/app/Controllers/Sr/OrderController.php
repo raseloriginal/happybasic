@@ -210,8 +210,7 @@ final class OrderController extends Controller
              WHERE o.sr_id = ? ORDER BY o.id DESC LIMIT 1',
             [$sr['id']]
         ) ?? Database::getInstance()->fetch(
-            'SELECT lat, lng FROM retailers WHERE partner_id = ? ORDER BY id DESC LIMIT 1',
-            [$sr['partner_id']]
+            'SELECT lat, lng FROM retailers WHERE status = \'active\' ORDER BY id DESC LIMIT 1'
         );
 
         return $r !== null ? ['lat' => (float) $r['lat'], 'lng' => (float) $r['lng']] : null;

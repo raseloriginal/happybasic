@@ -21,7 +21,6 @@ final class RetailerAuthMiddleware
         $user = PanelAuth::user('retailer', 'retailer');
         $shops = $user === null ? [] : Database::getInstance()->fetchAll(
             "SELECT r.id, r.name, r.address, r.phone FROM retailers r
-             JOIN partners p ON p.id = r.partner_id AND p.status = 'active' AND p.deleted_at IS NULL
              WHERE r.phone = ? AND r.status = 'active' ORDER BY r.id DESC",
             [$user['phone']]
         );

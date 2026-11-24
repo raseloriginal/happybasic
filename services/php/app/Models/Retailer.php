@@ -16,15 +16,14 @@ final class Retailer
         return Database::getInstance();
     }
 
-    /** @return list<array<string, mixed>> */
+    /** Retailers are global: every partner sees every active shop ($partnerId is kept only for the callers' sake). @return list<array<string, mixed>> */
     public static function forPartner(int $partnerId): array
     {
         $rows = self::db()->fetchAll(
             "SELECT r.*,
                 (SELECT CONCAT(o.order_sr_total, '|', o.order_date) FROM orders o
                  WHERE o.retailer_id = r.id AND o.status <> 'cancelled' ORDER BY o.order_date DESC, o.id DESC LIMIT 1) AS last_order
-             FROM retailers r WHERE r.partner_id = ? AND r.status = 'active' ORDER BY r.name",
-            [$partnerId]
+             FROM retailers r WHERE r.status = 'active' ORDER BY r.name"
         );
 
         return array_map([self::class, 'present'], $rows);
@@ -37,18 +36,17 @@ final class Retailer
             $rows = self::db()->fetchAll(
                 "SELECT id, partner_id, created_by_sr_id, name, phone, address, lat, lng, due_balance
                  FROM retailers
-                 WHERE partner_id = ? AND status = 'active'
+                 WHERE status = 'active'
                  ORDER BY ((lat - ?) * (lat - ?) + (lng - ?) * (lng - ?)) ASC, id DESC
                  LIMIT {$limit}",
-                [$partnerId, $lat, $lat, $lng, $lng]
+                [$lat, $lat, $lng, $lng]
             );
         } else {
             $rows = self::db()->fetchAll(
                 "SELECT id, partner_id, created_by_sr_id, name, phone, address, lat, lng, due_balance
                  FROM retailers
-                 WHERE partner_id = ? AND status = 'active'
-                 ORDER BY id DESC",
-                [$partnerId]
+                 WHERE status = 'active'
+                 ORDER BY id DESC"
             );
         }
 
@@ -95,7 +93,7 @@ final class Retailer
     /** @return array<string, mixed> */
     public static function findForPartner(int $partnerId, int $id): array
     {
-        $row = self::db()->fetch("SELECT * FROM retailers WHERE id = ? AND partner_id = ? AND status = 'active'", [$id, $partnerId]);
+        $row = self::db()->fetch("SELECT * FROM retailers WHERE id = ? AND status = 'active'", [$id]);
         if ($row === null) {
             throw new HttpError('Retailer not found.', 404);
         }
@@ -145,17 +143,17 @@ final class Retailer
             throw new HttpError('Retailer location is missing. Allow location access or place a pin on the map.', 422);
         }
         $dup = self::db()->fetch(
-            "SELECT id FROM retailers WHERE partner_id = ? AND name = ? AND status = 'active'
+            "SELECT id FROM retailers WHERE name = ? AND status = 'active'
                AND ABS(lat - ?) < 0.0003 AND ABS(lng - ?) < 0.0003",
-            [$partnerId, $d['name'], $d['lat'], $d['lng']]
+            [$d['name'], $d['lat'], $d['lng']]
         );
         if ($dup !== null) {
             throw new HttpError("\"{$d['name']}\" is already registered at this location.", 422);
         }
 
         self::db()->execute(
-            'INSERT INTO retailers (partner_id, created_by_sr_id, name, phone, address, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [$partnerId, $srId, $d['name'], $d['phone'], $d['address'], $d['lat'], $d['lng']]
+            'INSERT INTO retailers (partner_id, created_by_sr_id, name, phone, address, lat, lng) VALUES (NULL, ?, ?, ?, ?, ?, ?)',
+            [$srId, $d['name'], $d['phone'], $d['address'], $d['lat'], $d['lng']]
         );
 
         return self::present(self::findForPartner($partnerId, (int) self::db()->lastInsertId()));

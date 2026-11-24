@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS `delivery_men` (
 
 CREATE TABLE IF NOT EXISTS `retailers` (
     `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `partner_id` INT UNSIGNED NOT NULL,
+    `partner_id` INT UNSIGNED NULL,
     `created_by_sr_id` INT UNSIGNED NULL,
     `name` VARCHAR(150) NOT NULL,
     `phone` VARCHAR(30) NULL,
@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS `retailers` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_retailers_partner_geo` (`partner_id`, `lat`, `lng`),
+    INDEX `idx_retailers_status_geo` (`status`, `lat`, `lng`),
     CONSTRAINT `fk_retailers_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_retailers_sr` FOREIGN KEY (`created_by_sr_id`) REFERENCES `salesmen` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

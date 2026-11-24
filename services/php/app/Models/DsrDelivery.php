@@ -566,9 +566,8 @@ final class DsrDelivery
             $srRows = self::db()->fetchAll(
                 "SELECT id, partner_id, created_by_sr_id, name, phone, address, lat, lng, due_balance
                  FROM retailers
-                 WHERE partner_id = ? AND status = 'active' AND created_by_sr_id IN ({$in})
-                 ORDER BY id DESC",
-                [$partnerId]
+                 WHERE status = 'active' AND created_by_sr_id IN ({$in})
+                 ORDER BY id DESC"
             );
             foreach ($srRows as $r) {
                 $id = (string) $r['id'];
@@ -642,8 +641,8 @@ final class DsrDelivery
                     throw new HttpError('দোকানের অবস্থান পাওয়া যায়নি। লোকেশন অ্যাক্সেস চালু করুন।', 422);
                 }
                 $db->execute(
-                    'INSERT INTO retailers (partner_id, name, phone, address, lat, lng) VALUES (?, ?, ?, ?, ?, ?)',
-                    [$trip['partner_id'], $r['name'], $r['phone'], $r['address'], $r['lat'], $r['lng']]
+                    'INSERT INTO retailers (partner_id, name, phone, address, lat, lng) VALUES (NULL, ?, ?, ?, ?, ?)',
+                    [$r['name'], $r['phone'], $r['address'], $r['lat'], $r['lng']]
                 );
                 $retailerId = (int) $db->lastInsertId();
             } else {
