@@ -26,7 +26,8 @@
                     });
                     let data = {};
                     try { data = await res.json(); } catch { /* non-JSON */ }
-                    if (!res.ok || data.ok === false) throw new Error(data.message || 'Upload failed.');
+                    if (res.status === 413) throw new Error('File too big for the web server (HTTP 413). Raise nginx client_max_body_size to 100m, and PHP upload_max_filesize / post_max_size.');
+                    if (!res.ok || data.ok === false) throw new Error(data.message || `Upload failed (HTTP ${res.status}). Usually the server size limit: raise nginx client_max_body_size, PHP upload_max_filesize and post_max_size to 100M.`);
                     H.showToast(data.message);
                     window.location.reload();
                 });

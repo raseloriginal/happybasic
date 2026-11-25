@@ -38,6 +38,19 @@ android {
         // versionCode / versionName come from pubspec.yaml: version: 1.0.0+1  (name + build number).
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Real phones are ARM. Without this filter a plugin's stray x86_64 library makes the APK claim x86_64
+        // support although the Flutter engine is not included for it.
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
+    }
+
+    // Real phones are ARM: drop the stray x86 libraries some plugins ship, so the APK does not claim x86 support
+    // (the Flutter engine is not included for it).
+    packaging {
+        jniLibs {
+            excludes += setOf("lib/x86/**", "lib/x86_64/**")
+        }
     }
 
     signingConfigs {
