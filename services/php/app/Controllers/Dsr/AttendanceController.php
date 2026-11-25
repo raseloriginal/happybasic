@@ -16,13 +16,15 @@ final class AttendanceController extends DsrController
     {
         $dsr = $this->dsr();
         $token = (string) $request->query('t', '');
+        $date = $this->pickedDate() ?? date('Y-m-d');
+        $row = DsrMonitor::attendanceOn($dsr['id'], $date);
 
         return $this->view('dsr.attendance', [
             'title' => 'হাজিরা',
             'activeNav' => 'dashboard',
             'selectedDate' => $date,
             'isToday' => $date === date('Y-m-d'),
-            'today' => DsrMonitor::attendanceOn($dsr['id'], $date),
+            'today' => $row !== null && $row['checked_in_at'] !== null ? $row : null, // a day only marked by the partner can still be scanned
             'token' => preg_match('/^[a-f0-9]{16,64}$/', $token) === 1 ? $token : '',
             'days' => DsrMonitor::historyFor($dsr['partner_id'], $dsr['id'], substr($date, 0, 7)),
         ]);
