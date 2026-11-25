@@ -23,6 +23,12 @@ final class LiveController extends PartnerController
         ]);
     }
 
+    /** Realtime channel of the signed-in partner (asked by the Node realtime service with the browser's cookie). */
+    public function channels(): Response
+    {
+        return $this->action(fn(): array => ['channels' => ['partner:' . $this->partnerId()]]);
+    }
+
     public function team(Request $request): Response
     {
         return $this->action(fn(): array => ['team' => DsrTrack::team($this->partnerId(), $this->dateInput($request, 'date')), 'now' => time()]);

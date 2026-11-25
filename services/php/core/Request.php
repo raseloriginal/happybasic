@@ -57,6 +57,14 @@ final class Request
             }
         }
 
+        // Apache (mod_php / CGI) hides Authorization from $_SERVER; the mobile app's bearer token needs it.
+        if (!isset($headers['AUTHORIZATION'])) {
+            $auth = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? (function_exists('getallheaders') ? (getallheaders()['Authorization'] ?? null) : null);
+            if (is_string($auth) && $auth !== '') {
+                $headers['AUTHORIZATION'] = $auth;
+            }
+        }
+
         $rawBody = file_get_contents('php://input');
 
         return new self(
@@ -194,7 +202,8 @@ final class Request
     {
         $accept = strtolower((string) $this->header('Accept'));
         $contentType = strtolower((string) $this->header('Content-Type'));
-        return str_contains($accept, 'application/json')
+        return str_starts_with($this->path(), '/api/v1/')
+            || str_contains($accept, 'application/json')
             || str_contains($contentType, 'application/json')
             || $this->isAjax();
     }

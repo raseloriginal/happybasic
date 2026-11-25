@@ -21,6 +21,10 @@ final class TrackController extends DsrController
         return $this->action(function () use ($request): array {
             $saved = DsrTrack::store($this->dsr(), array_values((array) $request->input('points', [])));
 
+            if ($saved > 0) {
+                \App\Services\Push::publish(['partner:' . $this->dsr()['partner_id']], 'location');
+            }
+
             return ['saved' => $saved, 'tracking' => true];
         });
     }

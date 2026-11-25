@@ -83,6 +83,13 @@
                 <span>Platform Fees</span>
             </a>
 
+            <a href="<?= e(url('/admin/app')) ?>" class="nav-item <?= ($activeNav ?? '') === 'app' ? 'is-active' : '' ?>">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>
+                </svg>
+                <span>Mobile App</span>
+            </a>
+
             <a href="<?= e(url('/admin/settings')) ?>" class="nav-item <?= ($activeNav ?? '') === 'settings' ? 'is-active' : '' ?>">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                     <circle cx="12" cy="12" r="3"/>
@@ -149,5 +156,6 @@
 <script src="<?= e(asset('admin/js/pages/salesmen.js')) ?>"></script>
 <script src="<?= e(asset('admin/js/pages/platform-fees.js')) ?>"></script>
 <script src="<?= e(asset('admin/js/pages/settings.js')) ?>"></script>
+<script src="<?= e(asset('admin/js/pages/app.js')) ?>"></script>
 </body>
 </html>

@@ -99,6 +99,17 @@ final class DeliveryController extends DsrController
                 'cancel_reason' => mb_substr($reason, 0, 240),
             ]);
             $this->log('Updated', "DSR saved delivery for retailer #{$retailer}");
+            $allCancelled = $orders !== [] && count(array_filter($orders, static fn(array $o): bool => $o['cancelled'])) === count($orders);
+            \App\Services\Push::toUsers(
+                \App\Services\Push::retailerUsers($retailer),
+                $allCancelled ? 'অর্ডার বাতিল' : 'মাল পৌঁছেছে',
+                $allCancelled ? 'আজকের ডেলিভারি বাতিল হয়েছে।' : $this->dsr()['name'] . ' আপনার মাল দিয়ে গেছে।',
+                ['type' => 'delivery']
+            );
+            $trip = $this->trip();
+            if ($trip !== null) {
+                \App\Services\Push::publish(array_map(static fn(int $u): string => "user:{$u}", \App\Services\Push::srUsersOfStop($trip['id'], $retailer)), 'refresh');
+            }
 
             return ['message' => 'ডেলিভারি সংরক্ষিত হয়েছে।'] + $this->stateData();
         });

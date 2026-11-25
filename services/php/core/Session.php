@@ -15,6 +15,12 @@ final class Session
             return;
         }
 
+        // Mobile app API: token auth only, no PHP session file / cookie per request.
+        if (App::isApi()) {
+            $_SESSION ??= [];
+            return;
+        }
+
         if (PHP_SAPI !== 'cli' && !headers_sent()) {
             $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                 || ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443);

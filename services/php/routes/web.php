@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\Api\AppReleaseController;
 use App\Controllers\AuthController;
 use App\Controllers\HomeController;
 use App\Middleware\CsrfMiddleware;
@@ -15,6 +16,8 @@ $router->get('/', [HomeController::class, 'index'])->name('home');
 
 // Health & Service endpoints
 $router->get('/api/health', [HomeController::class, 'health'])->name('api.health');
+$router->get('/app', [AppReleaseController::class, 'page'])->name('app.download');
+$router->get('/app/download', [AppReleaseController::class, 'download']);
 $router->get('/api/services/health', [HomeController::class, 'servicesHealth'])->name('api.services.health');
 
 // User Auth pages (ready for backend phase)
@@ -43,3 +46,6 @@ require __DIR__ . '/dsr.php';
 
 // Retailer routes (/retailer/*)
 require __DIR__ . '/retailer.php';
+
+// Mobile app API (/api/v1/*)
+require __DIR__ . '/api.php';

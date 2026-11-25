@@ -7,7 +7,7 @@ namespace App\Models;
 use App\Support\HttpError;
 use Core\Database;
 
-/** DSR GPS trail: recorded whenever the DSR app is open (the app shows a notice), read by the partner (live map, route of a day). */
+/** DSR and SR GPS trail (an SR's id is negative on the live map, so the two lists never clash): recorded whenever the DSR app is open (the app shows a notice), read by the partner (live map, route of a day). */
 final class DsrTrack
 {
     private const KEEP_DAYS = 90;
@@ -26,8 +26,9 @@ final class DsrTrack
      * @param array<string, mixed> $dsr
      * @param list<mixed> $points
      */
-    public static function store(array $dsr, array $points): int
+    public static function store(array $dsr, array $points, string $who = 'dsr'): int
     {
+        [$table, $col] = $who === 'sr' ? ['sr_locations', 'sr_id'] : ['dsr_locations', 'dsr_id'];
         $now = time();
         $saved = 0;
         foreach (array_slice($points, 0, 300) as $p) {
@@ -41,14 +42,14 @@ final class DsrTrack
                 continue;
             }
             $saved += self::db()->execute(
-                'INSERT IGNORE INTO dsr_locations (partner_id, dsr_id, recorded_at, lat, lng, accuracy_m, battery) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                "INSERT IGNORE INTO {$table} (partner_id, {$col}, recorded_at, lat, lng, accuracy_m, battery) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [$dsr['partner_id'], $dsr['id'], date('Y-m-d H:i:s', min($t, $now)), round($lat, 7), round($lng, 7),
                     is_numeric($p['acc'] ?? null) ? max(0, min(65000, (int) $p['acc'])) : null,
                     is_numeric($p['bat'] ?? null) ? max(0, min(100, (int) $p['bat'])) : null]
             );
         }
         if (random_int(1, 300) === 1) {
-            self::db()->execute('DELETE FROM dsr_locations WHERE recorded_at < (NOW() - INTERVAL ' . self::KEEP_DAYS . ' DAY)');
+            self::db()->execute("DELETE FROM {$table} WHERE recorded_at < (NOW() - INTERVAL " . self::KEEP_DAYS . ' DAY)');
         }
 
         return $saved;
@@ -83,12 +84,13 @@ final class DsrTrack
 
         $today = $date === date('Y-m-d');
 
-        return array_map(static function (array $r) use ($today, $trips): array {
+        $dsrs = array_map(static function (array $r) use ($today, $trips): array {
             $id = (int) $r['id'];
             $age = $r['recorded_at'] !== null ? max(0, time() - strtotime((string) $r['recorded_at'])) : null;
 
             return [
                 'id' => $id,
+                'role' => 'dsr',
                 'name' => $r['name'],
                 'phone' => $r['phone'],
                 'photo' => !empty($r['photo_path']) ? url((string) $r['photo_path']) : null,
@@ -103,14 +105,54 @@ final class DsrTrack
                 'done' => (int) ($trips[$id]['done'] ?? 0),
             ];
         }, $rows);
+
+        return array_merge($dsrs, self::srTeam($partnerId, $date));
+    }
+
+    /** The partner's SRs that sent a location that day, same shape as the DSR list. @return list<array<string, mixed>> */
+    private static function srTeam(int $partnerId, string $date): array
+    {
+        $today = $date === date('Y-m-d');
+        $rows = self::db()->fetchAll(
+            "SELECT s.id, s.name, s.phone, s.photo_path, l.lat, l.lng, l.accuracy_m, l.battery, l.recorded_at
+             FROM salesmen s
+             JOIN sr_locations l ON l.id = (SELECT x.id FROM sr_locations x WHERE x.sr_id = s.id AND x.recorded_at >= ? AND x.recorded_at < ?
+                                            ORDER BY x.recorded_at DESC LIMIT 1)
+             WHERE s.partner_id = ? AND s.deleted_at IS NULL ORDER BY s.name",
+            [$date, date('Y-m-d', strtotime($date . ' +1 day')), $partnerId]
+        );
+
+        return array_map(static function (array $r) use ($today): array {
+            $t = strtotime((string) $r['recorded_at']);
+
+            return [
+                'id' => -(int) $r['id'],
+                'role' => 'sr',
+                'name' => $r['name'] . ' (SR)',
+                'phone' => $r['phone'],
+                'photo' => !empty($r['photo_path']) ? url((string) $r['photo_path']) : null,
+                'lat' => (float) $r['lat'],
+                'lng' => (float) $r['lng'],
+                'accuracy' => $r['accuracy_m'] !== null ? (int) $r['accuracy_m'] : null,
+                'battery' => $r['battery'] !== null ? (int) $r['battery'] : null,
+                't' => $t,
+                'online' => $today && max(0, time() - $t) <= self::ONLINE_SEC,
+                'checked_in' => null,
+                'shops' => 0,
+                'done' => 0,
+            ];
+        }, $rows);
     }
 
     /** Route of one DSR on one day: points [t, lat, lng], stops, deliveries and totals. @return array<string, mixed> */
     public static function route(int $partnerId, int $dsrId, string $date): array
     {
         $db = self::db();
-        if ($db->fetch('SELECT id FROM delivery_men WHERE id = ? AND partner_id = ?', [$dsrId, $partnerId]) === null) {
-            throw new HttpError('DSR পাওয়া যায়নি।', 404);
+        $isSr = $dsrId < 0;
+        $dsrId = abs($dsrId);
+        [$people, $table, $col] = $isSr ? ['salesmen', 'sr_locations', 'sr_id'] : ['delivery_men', 'dsr_locations', 'dsr_id'];
+        if ($db->fetch("SELECT id FROM {$people} WHERE id = ? AND partner_id = ?", [$dsrId, $partnerId]) === null) {
+            throw new HttpError(($isSr ? 'SR' : 'DSR') . ' পাওয়া যায়নি।', 404);
         }
         $next = date('Y-m-d', strtotime($date . ' +1 day'));
         $points = [];
@@ -118,8 +160,8 @@ final class DsrTrack
         $moving = 0;
         $prev = null;
         foreach ($db->fetchAll(
-            'SELECT recorded_at, lat, lng FROM dsr_locations WHERE dsr_id = ? AND partner_id = ? AND recorded_at >= ? AND recorded_at < ?
-             AND (accuracy_m IS NULL OR accuracy_m <= 100) ORDER BY recorded_at',
+            "SELECT recorded_at, lat, lng FROM {$table} WHERE {$col} = ? AND partner_id = ? AND recorded_at >= ? AND recorded_at < ?
+             AND (accuracy_m IS NULL OR accuracy_m <= 100) ORDER BY recorded_at",
             [$dsrId, $partnerId, $date, $next]
         ) as $r) {
             $p = [(int) strtotime((string) $r['recorded_at']), (float) $r['lat'], (float) $r['lng']];
@@ -138,7 +180,7 @@ final class DsrTrack
         }
 
         $events = [];
-        foreach ($db->fetchAll(
+        foreach ($isSr ? [] : $db->fetchAll(
             "SELECT o.retailer_id, MIN(o.retailer_name_snapshot) AS name, MIN(o.delivered_at) AS at, SUM(o.delivered_sr_total) AS total,
                     SUM(o.status <> 'cancelled') AS ok, MIN(r.lat) AS lat, MIN(r.lng) AS lng
              FROM orders o JOIN trips t ON t.id = o.trip_id LEFT JOIN retailers r ON r.id = o.retailer_id

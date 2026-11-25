@@ -63,8 +63,9 @@ $router->group(['prefix' => 'partner', 'middleware' => [CsrfMiddleware::class]],
         $router->get('/orders', [OrderController::class, 'index'])->name('partner.orders');
 
         $router->get('/live', [LiveController::class, 'index'])->name('partner.live');
+        $router->get('/live/channels', [LiveController::class, 'channels']);
         $router->get('/live/team', [LiveController::class, 'team']);
-        $router->get('/live/{id:\d+}/route', [LiveController::class, 'route']);
+        $router->get('/live/{id:-?\d+}/route', [LiveController::class, 'route']);
 
         $router->get('/dues', [DueController::class, 'index'])->name('partner.dues');
         $router->post('/dues/settings', [DueController::class, 'settings']);

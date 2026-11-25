@@ -105,6 +105,8 @@ final class TripController extends PartnerController
         return $this->action(function () use ($id): array {
             $trip = Trip::dispatch($this->partnerId(), $id);
             $this->log('Updated', 'Trip', "Partner dispatched {$trip['code']} ({$trip['dsr']})");
+            \App\Services\Push::toUsers(\App\Services\Push::tripDsrUser($id), 'ট্রিপ ডিসপ্যাচ হয়েছে', 'আপনার ডেলিভারি ট্রিপ চালু হয়েছে।', ['type' => 'trip', 'trip_id' => $id]);
+            \App\Services\Push::toUsers(\App\Services\Push::retailerUsersOfTrip($id), 'আপনার মাল রওনা হয়েছে', 'ডেলিভারি ম্যান আপনার দোকানের দিকে আসছে।', ['type' => 'delivery']);
             return ['message' => "{$trip['dsr']} (" . \App\Support\Bn::digits($trip['code']) . ") ডিসপ্যাচ করা হয়েছে। FIFO নিয়মে স্টক বাদ দেওয়া হয়েছে।", 'trip' => $trip];
         });
     }

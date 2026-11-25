@@ -75,6 +75,16 @@ final class App
         return self::$router;
     }
 
+    /** True for the mobile app API (/api/v1/...): token auth, no session, no cookies. Looks at the path only, never the query. */
+    public static function isApi(): bool
+    {
+        $path = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?: '');
+        $base = rtrim(str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? ''))), '/');
+        $base = preg_replace('#/services/php/public$#', '', $base) ?? '';
+
+        return str_starts_with($path, $base . '/api/v1/');
+    }
+
     public static function request(): ?Request
     {
         return self::$request;

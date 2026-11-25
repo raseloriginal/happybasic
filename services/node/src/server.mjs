@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { publish, stream } from './realtime.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootEnvPath = path.resolve(__dirname, '../../../.env');
@@ -34,6 +35,13 @@ function sendJson(res, status, payload) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
+  // Public (proxied by the web server): the client's own token / cookie is checked by PHP.
+  const rt = /\/rt\/(app|partner)$/.exec(url.pathname);
+  if (req.method === 'GET' && rt) {
+    stream(req, res, rt[1]);
+    return undefined;
+  }
+
   if (SERVICE_TOKEN && req.headers['x-service-token'] !== SERVICE_TOKEN) {
     return sendJson(res, 401, { error: 'Unauthorized service token' });
   }
@@ -44,6 +52,13 @@ const server = http.createServer((req, res) => {
       service: 'node',
       runtime: process.version,
     });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/publish') {
+    // Never open without a token, even if .env forgot to set one.
+    if (!SERVICE_TOKEN) return sendJson(res, 503, { error: 'INTERNAL_SERVICE_TOKEN is not set' });
+    publish(req, res);
+    return undefined;
   }
 
   return sendJson(res, 404, { error: 'Not Found' });

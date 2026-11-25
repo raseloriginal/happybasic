@@ -9,3 +9,6 @@ storage/uploads/*
 storage/backups/*
 services/php/public/uploads/*
 !.gitkeep
+
+# Editor settings
+.vscode/

@@ -11,6 +11,8 @@ happybasic/
 ├── database/               # Shared SQL schemas & migrations
 ├── shared/                 # Cross-service contracts (JSON schemas, OpenAPI, specs)
 ├── storage/                # Shared logs & uploads
+├── mobile-app/             # Android app (Flutter) for SR / DSR / Retailer — see mobile-app/README.md
+├── docs/                   # SYSTEM_FLOW.md, MOBILE_APP_FLOW.md, api/ (mobile API reference)
 └── services/
     ├── php/                # Primary MVC web app (Router, Controller, Model, PDO, View, Auth, CSRF, Validator, ServiceClient)
     ├── node/               # Node.js service/worker (port 3001)
@@ -64,6 +66,10 @@ DSRs sign in at `/dsr/login`. Apply `database/migrations/005_dsr_settlement.sql`
 - **Ready sale** sells van stock at the loaded dealer price (DSR cannot change it) to an existing retailer or a new one pinned at the DSR's location.
 - **Net Pay** = delivered (SR price) + ready sale + old due collected − damage − expenses − new due. SR O/C is not deducted from cash.
 - DSR submits the cash count (trip → `in_review`); the partner **approves** (trip → `settled`) or **sends back** with a note. Approval returns unsold stock to its lots (newest allocations first), sets FIFO cost per sold line, posts SR delivery O/C to `sr_oc_ledger` / `salesmen.oc_balance`, updates retailer due balances and credits damage claims to `company_ledger`.
+
+## Mobile App & API
+
+One Android app (SR, DSR, Retailer — the login's role picks the panel) in `mobile-app/`; it talks to the JSON API at `/api/v1` (`services/php/routes/api.php`, controllers in `app/Controllers/Api/`). Docs: [docs/api/](docs/api/README.md) (endpoints), [docs/MOBILE_APP_FLOW.md](docs/MOBILE_APP_FLOW.md) (how the app works), [mobile-app/README.md](mobile-app/README.md) (build, signing, Firebase). APKs are uploaded in **Admin → Mobile App** and shared via `/app`. Apply `database/migrations/016_mobile_api.sql` (automatic on deploy). Optional `.env` keys: `APP_MIN_VERSION_CODE`, `FCM_SERVICE_ACCOUNT`.
 
 ## Deployment workflow
 

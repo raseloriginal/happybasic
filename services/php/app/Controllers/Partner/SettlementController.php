@@ -42,6 +42,7 @@ final class SettlementController extends PartnerController
                 'Settlement',
                 "Partner settled trip #{$id}: cash ৳{$res['cash_received']}, restocked {$res['restocked_pcs']} pcs, damage ৳{$res['damage_amount']}"
             );
+            \App\Services\Push::toUsers(\App\Services\Push::tripDsrUser($id), 'সেটেলমেন্ট অনুমোদিত', 'পার্টনার আপনার সেটেলমেন্ট কনফার্ম করেছেন।', ['type' => 'settlement']);
             return ['message' => 'সেটেলমেন্ট কনফার্ম হয়েছে: ' . \App\Support\Bn::money($res['cash_received'], true) . ' ক্যাশ, ' . \App\Support\Bn::num($res['restocked_pcs']) . ' পিস স্টকে ফেরত।'];
         });
     }
@@ -55,6 +56,7 @@ final class SettlementController extends PartnerController
             }
             TripSettlement::sendBack($this->partnerId(), $id, mb_substr($note, 0, 255));
             $this->log('Updated', 'Settlement', "Partner sent back settlement of trip #{$id}");
+            \App\Services\Push::toUsers(\App\Services\Push::tripDsrUser($id), 'সেটেলমেন্ট ফেরত এসেছে', mb_substr($note, 0, 120), ['type' => 'settlement']);
             return ['message' => 'সেটেলমেন্ট হিসাব DM-এর কাছে ফেরত পাঠানো হয়েছে।'];
         });
     }

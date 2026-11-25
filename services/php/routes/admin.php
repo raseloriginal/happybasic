@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\Admin\AdminAuthController;
+use App\Controllers\Admin\AppController;
 use App\Controllers\Admin\CompanyController;
 use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DealerController;
@@ -43,6 +44,11 @@ $router->group(['prefix' => 'admin', 'middleware' => [CsrfMiddleware::class]], s
         $router->get('/platform-fees', [PlatformFeeController::class, 'index'])->name('admin.platform-fees');
         $router->put('/platform-fees/{id:\d+}', [PlatformFeeController::class, 'update']);
         $router->get('/platform-fees/{id:\d+}/history/{company:\d+}', [PlatformFeeController::class, 'history']);
+
+        $router->get('/app', [AppController::class, 'index'])->name('admin.app');
+        $router->post('/app', [AppController::class, 'store']);
+        $router->patch('/app/{id:\d+}/status', [AppController::class, 'status']);
+        $router->delete('/app/{id:\d+}', [AppController::class, 'destroy']);
 
         $router->get('/settings', [SettingController::class, 'index'])->name('admin.settings');
         $router->post('/settings/categories', [SettingController::class, 'storeCategory']);

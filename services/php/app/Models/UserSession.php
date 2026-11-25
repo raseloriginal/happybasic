@@ -139,6 +139,10 @@ final class UserSession
 
     private static function describeDevice(string $ua): string
     {
+        // The mobile app sends "HappyBangladesh/1.0.0 (Samsung SM-A15; Android 14)".
+        if (preg_match('/^HappyBangladesh\/[\d.]+ \(([^)]*)\)/', $ua, $m) === 1) {
+            return 'অ্যাপ · ' . mb_substr($m[1], 0, 60);
+        }
         $browser = match (true) {
             str_contains($ua, 'Edg/') => 'Edge',
             str_contains($ua, 'OPR/') => 'Opera',

@@ -34,7 +34,7 @@
         let busy = false;
         const markers = new Map();
         const isToday = () => date === today;
-        const color = (id) => COLORS[id % COLORS.length];
+        const color = (id) => COLORS[Math.abs(id) % COLORS.length];
 
         // ------------------------------------------------------------ text
         const clock = (t) => {
@@ -332,8 +332,12 @@
         $('lvDate').addEventListener('click', (e) => { try { e.target.showPicker(); } catch { /* old browser */ } });
 
         renderTeam();
+        // Instant updates when the realtime service is reachable; the poll below keeps working without it.
+        const rt = typeof EventSource === 'function' ? new EventSource(H.url('/rt/partner'), { withCredentials: true }) : null;
+        rt?.addEventListener('location', () => { if (alive() && isToday() && !document.hidden) refresh(); });
+        rt?.addEventListener('error', () => { if (rt.readyState === 2) rt.close(); });
         const poll = setInterval(() => {
-            if (!alive()) { clearInterval(poll); cancelAnimationFrame(player.raf); map?.remove(); map = null; return; }
+            if (!alive()) { clearInterval(poll); rt?.close(); cancelAnimationFrame(player.raf); map?.remove(); map = null; return; }
             if (isToday() && !document.hidden) refresh();
         }, POLL_MS);
 

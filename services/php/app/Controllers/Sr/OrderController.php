@@ -154,6 +154,10 @@ final class OrderController extends Controller
 
             $res = Order::save($sr, $retailerId, $items, $orderId, $this->workTime($request));
             ActivityLog::record($orderId ? 'Updated' : 'Created', 'Order', ($orderId ? 'Updated' : 'Placed') . " order {$res['order']['code']} for {$res['order']['retailer']}", $sr['user_id']);
+            if ($orderId === null) {
+                \App\Services\Push::toUsers(\App\Services\Push::retailerUsers($retailerId), 'নতুন অর্ডার', "SR {$sr['name']} · {$sr['company']} অর্ডার নিয়েছে।", ['type' => 'order']);
+            }
+            \App\Services\Push::publish(["partner:{$sr['partner_id']}"], 'order');
 
             return [
                 'message' => 'অর্ডার সংরক্ষিত হয়েছে।',
@@ -178,7 +182,7 @@ final class OrderController extends Controller
     }
 
     /** @return list<array<string, mixed>> SR's company products that have a price (received through a lot) */
-    private function catalog(array $sr): array
+    public function catalog(array $sr): array
     {
         $out = [];
         foreach (Product::forPartner($sr['partner_id'], $sr['company_id'], true) as $p) {
