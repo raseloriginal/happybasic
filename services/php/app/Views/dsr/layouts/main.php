@@ -76,5 +76,6 @@ $isMapMode = ($activeNav ?? '') === 'delivery';
 <script src="<?= e(asset('shared/js/geo-filter.js')) ?>"></script>
 <script src="<?= e(asset('shared/js/map-tiles.js')) ?>"></script>
 <script src="<?= e(asset('dsr/js/dsr.js')) ?>"></script>
+<script src="<?= e(asset('dsr/js/track.js')) ?>"></script>
 </body>
 </html>

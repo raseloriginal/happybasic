@@ -10,6 +10,7 @@ use App\Controllers\Partner\DayClosingController;
 use App\Controllers\Partner\DeliveryManController;
 use App\Controllers\Partner\DsrMonitorController;
 use App\Controllers\Partner\DueController;
+use App\Controllers\Partner\LiveController;
 use App\Controllers\Partner\LotController;
 use App\Controllers\Partner\OrderController;
 use App\Controllers\Partner\ProductController;
@@ -60,6 +61,10 @@ $router->group(['prefix' => 'partner', 'middleware' => [CsrfMiddleware::class]],
         $router->delete('/company-ledger/{id:\d+}', [CompanyLedgerController::class, 'destroy']);
 
         $router->get('/orders', [OrderController::class, 'index'])->name('partner.orders');
+
+        $router->get('/live', [LiveController::class, 'index'])->name('partner.live');
+        $router->get('/live/team', [LiveController::class, 'team']);
+        $router->get('/live/{id:\d+}/route', [LiveController::class, 'route']);
 
         $router->get('/dues', [DueController::class, 'index'])->name('partner.dues');
         $router->post('/dues/settings', [DueController::class, 'settings']);

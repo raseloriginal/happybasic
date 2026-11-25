@@ -7,6 +7,7 @@ use App\Controllers\Dsr\DashboardController;
 use App\Controllers\Dsr\DeliveryController;
 use App\Controllers\Dsr\ExpenseController;
 use App\Controllers\Dsr\SettlementController;
+use App\Controllers\Dsr\TrackController;
 use App\Controllers\Dsr\VanStockController;
 use App\Controllers\PanelAuthController;
 use App\Middleware\CsrfMiddleware;
@@ -37,6 +38,9 @@ $router->group(['prefix' => 'dsr', 'middleware' => [CsrfMiddleware::class]], sta
 
         $router->get('/attendance', [AttendanceController::class, 'index'])->name('dsr.attendance');
         $router->post('/attendance', [AttendanceController::class, 'checkIn']);
+
+        $router->get('/track', [TrackController::class, 'status']);
+        $router->post('/track', [TrackController::class, 'store']);
 
         $router->get('/van-stock', [VanStockController::class, 'index'])->name('dsr.van_stock');
 

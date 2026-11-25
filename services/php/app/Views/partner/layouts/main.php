@@ -8,6 +8,7 @@ $navItems = [
     ['key' => 'products',       'label' => 'পণ্য',             'path' => '/partner/products',       'icon' => '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>'],
     ['key' => 'company-ledger', 'label' => 'কোম্পানি খাতা',    'path' => '/partner/company-ledger', 'icon' => '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>'],
     ['key' => 'orders',         'label' => 'অর্ডার',           'path' => '/partner/orders',         'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>'],
+    ['key' => 'live', 'label' => 'লাইভ লোকেশন', 'path' => '/partner/live', 'icon' => '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'],
     ['key' => 'dues', 'label' => 'বাকি', 'path' => '/partner/dues', 'icon' => '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'],
     ['key' => 'dsr-monitor',    'label' => 'ডেলিভারি ম্যান হিসাব', 'path' => '/partner/dsr-monitor',    'icon' => '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>'],
     ['key' => 'attendance',     'label' => 'হাজিরা ও QR',      'path' => '/partner/attendance',     'icon' => '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M20 20h-3v-3"/>'],
@@ -103,7 +104,7 @@ $navItems = [
 <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
 <script src="<?= e(asset('partner/js/partner.js')) ?>"></script>
-<?php foreach (['trips', 'settlements', 'products', 'lots', 'delivery-men', 'orders-ledger', 'attendance', 'dsr-monitor', 'dues'] as $pageJs): ?>
+<?php foreach (['trips', 'settlements', 'products', 'lots', 'delivery-men', 'orders-ledger', 'attendance', 'dsr-monitor', 'dues', 'live'] as $pageJs): ?>
 <script src="<?= e(asset("partner/js/pages/{$pageJs}.js")) ?>"></script>
 <?php endforeach; ?>
 </body>
