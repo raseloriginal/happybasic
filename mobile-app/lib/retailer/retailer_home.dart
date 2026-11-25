@@ -168,12 +168,12 @@ class _HistoryPage extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 leading: Container(
-                  width: 48, padding: const EdgeInsets.symmetric(vertical: 6),
+                  width: 48, height: 44, padding: const EdgeInsets.symmetric(vertical: 2),
                   decoration: BoxDecoration(color: r['today'] == true ? kBlue : const Color(0xFFEFF4FF), borderRadius: BorderRadius.circular(10)),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  child: FittedBox(fit: BoxFit.scaleDown, child: Column(mainAxisSize: MainAxisSize.min, children: [
                     Text('${r['day']}', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: r['today'] == true ? Colors.white : kBlue)),
                     Text('${r['month']}', style: TextStyle(fontSize: 10.5, color: r['today'] == true ? Colors.white : kBlue)),
-                  ]),
+                  ])),
                 ),
                 title: Text(money(r['total']), style: const TextStyle(fontWeight: FontWeight.w800)),
                 subtitle: Text('${r['sub']}'),

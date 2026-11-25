@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'auth/login_page.dart';
@@ -38,6 +39,12 @@ class HappyApp extends StatelessWidget {
       title: 'হ্যাপি বাংলাদেশ',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      // Without these delegates Flutter has no Bengali MaterialLocalizations and TextField / dialogs / date pickers crash.
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       locale: const Locale('bn', 'BD'),
       supportedLocales: const [Locale('bn', 'BD'), Locale('en')],
       home: const RoleGate(),

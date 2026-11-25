@@ -20,6 +20,7 @@ class Tracker extends ChangeNotifier {
   Timer? _flushTimer;
   final List<Map<String, dynamic>> _buffer = [];
   bool _sending = false;
+  int _gen = 0; // bumped by stop(): a start() that was still waiting for permission must not come alive afterwards
   String _path = '/dsr/track';
 
   bool running = false;
@@ -47,10 +48,11 @@ class Tracker extends ChangeNotifier {
   Future<void> start(String role) async {
     _path = role == 'sr' ? '/sr/track' : '/dsr/track';
     if (running) return;
+    final gen = _gen;
     final saved = await LocalStore.readJson(_bufferKey);
     if (saved is List && _buffer.isEmpty) _buffer.addAll(saved.whereType<Map>().map((m) => Map<String, dynamic>.from(m)));
 
-    if (!await ensurePermission()) return;
+    if (!await ensurePermission() || gen != _gen || running) return;
     running = true;
     notifyListeners();
 
@@ -117,14 +119,16 @@ class Tracker extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    await _sub?.cancel();
-    _sub = null;
-    _flushTimer?.cancel();
+    _gen++;
+    _flushTimer?.cancel(); // synchronously: nothing may fire after stop() returns
     _flushTimer = null;
+    final sub = _sub;
+    _sub = null;
     running = false;
     _buffer.clear();
-    await LocalStore.deleteJson(_bufferKey);
     notifyListeners();
+    await sub?.cancel();
+    await LocalStore.deleteJson(_bufferKey);
   }
 
   /// One-off position for forms (new shop, attendance, ready sale).

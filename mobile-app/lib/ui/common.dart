@@ -91,6 +91,10 @@ Future<T?> busy<T>(BuildContext context, Future<T> Function() task) async {
   } on ApiException catch (e) {
     if (context.mounted) toast(context, e.message, error: true);
     return null;
+  } catch (_) {
+    // Anything unexpected (bad data, plugin error): never leave the user with a stuck spinner or a crash.
+    if (context.mounted) toast(context, 'কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।', error: true);
+    return null;
   } finally {
     if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
   }
