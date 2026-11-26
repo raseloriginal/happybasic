@@ -5,6 +5,8 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/tracker.dart';
 import '../ui/common.dart';
+import '../ui/dkit.dart';
+import '../ui/pwa_kit.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
@@ -20,6 +22,7 @@ class _AttendancePageState extends State<AttendancePage> {
   final GlobalKey<AsyncBodyState> _body = GlobalKey();
   bool _scanning = false;
   bool _handling = false;
+  String? _date;
 
   @override
   void dispose() {
@@ -60,57 +63,106 @@ class _AttendancePageState extends State<AttendancePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('হাজিরা')),
-      body: _scanning
-          ? Stack(children: [
-              MobileScanner(controller: _cam, onDetect: _onScan),
-              Center(child: Container(width: 250, height: 250, decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 3), borderRadius: BorderRadius.circular(20)))),
-              Positioned(
-                left: 0, right: 0, bottom: 40,
-                child: Column(children: [
-                  const Text('গোডাউনের QR কোড ফ্রেমে ধরুন', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 14),
-                  FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(140, 44)), onPressed: () => setState(() => _scanning = false), child: const Text('বন্ধ করুন')),
+    if (_scanning) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(children: [
+          MobileScanner(controller: _cam, onDetect: _onScan),
+          Center(child: Container(width: 250, height: 250, decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 3), borderRadius: BorderRadius.circular(20)))),
+          Positioned(
+            left: 0, right: 0, bottom: 40,
+            child: Column(children: [
+              Text('গোডাউনের QR কোড ফ্রেমে ধরুন', style: ts(15, w: FontWeight.w700, color: Colors.white)),
+              const SizedBox(height: 14),
+              SizedBox(width: 140, child: DBtn('বন্ধ করুন', kind: DBtnKind.secondary, height: 44, block: true, onTap: () => setState(() => _scanning = false))),
+            ]),
+          ),
+        ]),
+      );
+    }
+    return DPage(
+      title: 'হাজিরা',
+      child: AsyncBody(
+        key: _body,
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+        load: () => loadCached('dsr_attendance_${_date ?? 'today'}', () => ApiClient.get('/dsr/attendance', query: {'date': _date})),
+        builder: (context, d, reload) {
+          final today = d['today'] == null ? null : _m(d['today']);
+          final days = (d['days'] as List).map(_m).toList();
+          final selected = d['selectedDate']?.toString() ?? todayYmd();
+          final isToday = d['is_today'] != false;
+          final late = today != null && int0(today['late_min']) > 0;
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            DDateNav(date: selected, onChange: (v) => setState(() => _date = v == todayYmd() ? null : v)),
+            const SizedBox(height: 14),
+            DCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (today != null) ...[
+                  DBadge('${isToday ? 'আজকের' : '${dateBn(selected)}-এর'} হাজিরা সম্পন্ন', tone: late ? DTone.warning : DTone.success),
+                  const SizedBox(height: 6),
+                  Text(timeBn(today['checked_in_at']?.toString()), style: ts(24, w: FontWeight.w700, tabular: true)),
+                  const SizedBox(height: 6),
+                  Text(late ? '${bn(today['late_min'])} মিনিট দেরি' : 'সময়মতো', style: ts(12, color: DC.muted)),
+                ] else ...[
+                  DBadge(isToday ? 'আজ এখনো হাজিরা হয়নি' : 'এই দিনে হাজিরা নেই'),
+                  if (isToday) ...[
+                    const SizedBox(height: 6),
+                    Text('গোডাউনের QR স্ক্যান করুন', style: ts(24, w: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text('গোডাউনে পৌঁছে ফোনের লোকেশন চালু রেখে স্ক্যান করুন।', style: ts(12, color: DC.muted)),
+                  ],
+                ],
+              ]),
+            ),
+            if (today == null && isToday) ...[
+              const SizedBox(height: 14),
+              DCard(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  DBtn('QR স্ক্যান করুন', block: true, height: 44, onTap: () => setState(() => _scanning = true)),
                 ]),
               ),
-            ])
-          : AsyncBody(
-              key: _body,
-              load: () => loadCached('dsr_attendance', () => ApiClient.get('/dsr/attendance')),
-              builder: (context, d, reload) {
-                final today = d['today'] == null ? null : _m(d['today']);
-                final days = (d['days'] as List).map(_m).toList();
-                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(children: [
-                        Icon(today == null ? Icons.qr_code_scanner : Icons.verified, size: 54, color: today == null ? kBlue : kOk),
-                        const SizedBox(height: 10),
-                        Text(today == null ? 'আজকের হাজিরা বাকি' : 'আজকের হাজিরা সম্পন্ন', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                        if (today != null) Text('${timeBn(today['checked_in_at']?.toString())}${int0(today['late_min']) > 0 ? ' · ${bn(today['late_min'])} মিনিট দেরি' : ''}', style: const TextStyle(color: kMuted)),
-                        const SizedBox(height: 14),
-                        if (today == null)
-                          FilledButton.icon(onPressed: () => setState(() => _scanning = true), icon: const Icon(Icons.qr_code_scanner), label: const Text('QR স্ক্যান করুন')),
-                      ]),
-                    ),
-                  ),
-                  SectionTitle('${dateBn(d['selectedDate']?.toString())} মাসের হাজিরা'),
-                  for (final x in days.reversed)
-                    Card(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      child: ListTile(
-                        dense: true,
-                        leading: Text(bn(x['day']), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                        title: Text(switch (x['status']) { 'present' => 'উপস্থিত', 'absent' => 'অনুপস্থিত', 'half' => 'অর্ধদিবস', 'holiday' => 'ছুটি', _ => '${x['status']}' }),
-                        subtitle: x['time'] == null ? null : Text('${timeBn(x['time']?.toString())}${int0(x['late_min']) > 0 ? ' · ${bn(x['late_min'])} মিনিট দেরি' : ''}'),
-                        trailing: Icon(x['status'] == 'present' ? Icons.check_circle : Icons.cancel, color: x['status'] == 'present' ? kOk : kDanger, size: 20),
-                      ),
-                    ),
-                ]);
-              },
+            ],
+            const SizedBox(height: 14),
+            DCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const DSecTitle('এই মাসের হাজিরা'),
+                const SizedBox(height: 8),
+                for (final x in days.reversed) _Day(x),
+              ]),
             ),
+          ]);
+        },
+      ),
+    );
+  }
+}
+
+class _Day extends StatelessWidget {
+  const _Day(this.x);
+  final Map<String, dynamic> x;
+  @override
+  Widget build(BuildContext context) {
+    final st = '${x['status']}';
+    final lateMin = int0(x['late_min']);
+    final label = switch (st) {
+      'present' => x['time'] != null ? '${timeBn(x['time'].toString())}${lateMin > 0 ? ' · দেরি ${bn(lateMin)} মি.' : ''}' : 'উপস্থিত',
+      'half' => 'হাফ ডে',
+      'holiday' => 'ছুটি',
+      'pending' => 'আজ বাকি',
+      _ => 'অনুপস্থিত',
+    };
+    final bg = st == 'present' ? (lateMin > 0 ? const Color(0xFFFFF4D6) : const Color(0xFFE7F6EC)) : (st == 'half' ? const Color(0xFFFFF4D6) : const Color(0xFFF4F5F7));
+    return Opacity(
+      opacity: st == 'present' || st == 'half' ? 1 : 0.6,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text(dateBn('${x['date'] ?? ''}'.isNotEmpty ? '${x['date']}' : null).replaceAll('—', bn(x['day'])), style: ts(13, tabular: true)),
+          const SizedBox(width: 8),
+          Flexible(child: Text(label, textAlign: TextAlign.right, style: ts(13, tabular: true))),
+        ]),
+      ),
     );
   }
 }

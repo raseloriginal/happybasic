@@ -5,6 +5,7 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/offline.dart';
 import '../ui/common.dart';
+import 'damage_page.dart';
 import 'delivery_page.dart' show statusBn, statusColor;
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
@@ -210,6 +211,16 @@ class _StopPageState extends State<StopPage> {
                 ]),
               ),
             for (final o in _orders) _orderCard(o),
+            if (_can && widget.damageProducts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context)
+                      .push<bool>(MaterialPageRoute(builder: (_) => DamagePage(products: widget.damageProducts, stops: [_s], selectedId: int0(_s['id']))))
+                      .then((v) => v == true && mounted ? Navigator.pop(context, true) : null),
+                  child: const Text('+ ড্যামেজ সংগ্রহ'),
+                ),
+              ),
             if (_damages.isNotEmpty) ...[
               const SectionTitle('ড্যামেজ (বিল থেকে বাদ)'),
               for (final d in _damages)

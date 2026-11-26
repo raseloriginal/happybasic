@@ -6,9 +6,10 @@ import '../ui/common.dart';
 
 /// Damaged goods returned by a shop: deducted from that shop's bill at the dealer price.
 class DamagePage extends StatefulWidget {
-  const DamagePage({super.key, required this.products, required this.stops});
+  const DamagePage({super.key, required this.products, required this.stops, this.selectedId});
   final List<Map<String, dynamic>> products;
   final List<Map<String, dynamic>> stops;
+  final int? selectedId; // open straight on this shop (from the shop's delivery screen)
   @override
   State<DamagePage> createState() => _DamagePageState();
 }
@@ -17,6 +18,12 @@ class _DamagePageState extends State<DamagePage> {
   int? _retailer;
   final Map<int, TextEditingController> _ctl = {};
   String _q = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.selectedId != null) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _pick(widget.selectedId!) : null);
+  }
 
   void _pick(int id) {
     _retailer = id;

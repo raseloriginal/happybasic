@@ -19,35 +19,46 @@ const kWarn = Color(0xFFD97706);
 const kDanger = Color(0xFFDC2626);
 const kBorder = Color(0xFFE2E8F0);
 
-ThemeData buildTheme() {
-  final scheme = ColorScheme.fromSeed(seedColor: kBlue, primary: kBlue, surface: Colors.white);
+/// App theme. SR and DSR screens that are pushed on top of the tabs follow their PWA panel's tokens
+/// (SR: cobalt, radius 10/16 · DSR: black accent, radius 8/12); the retailer panel draws its own widgets.
+ThemeData buildTheme({String? role}) {
+  final dsr = role == 'dsr';
+  final accent = dsr ? const Color(0xFF111827) : kBlue;
+  final bg = dsr ? const Color(0xFFF7F8FA) : kBg;
+  final border = dsr ? const Color(0xFFE4E7EC) : kBorder;
+  final strong = dsr ? const Color(0xFFD0D5DD) : const Color(0xFFCBD5E1);
+  final cardR = dsr ? 12.0 : 16.0;
+  final ctrlR = dsr ? 8.0 : 10.0;
+  final scheme = ColorScheme.fromSeed(seedColor: accent, primary: accent, surface: Colors.white);
+  OutlineInputBorder ob(Color c) => OutlineInputBorder(borderRadius: BorderRadius.circular(ctrlR), borderSide: BorderSide(color: c));
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: kBg,
+    scaffoldBackgroundColor: bg,
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.white, foregroundColor: kInk, elevation: 0, scrolledUnderElevation: 1, centerTitle: false,
-      titleTextStyle: TextStyle(color: kInk, fontSize: 19, fontWeight: FontWeight.w700),
+      backgroundColor: Colors.white, foregroundColor: kInk, elevation: 0, scrolledUnderElevation: 0, centerTitle: false, toolbarHeight: 54,
+      shape: Border(bottom: BorderSide(color: kBorder)),
+      titleTextStyle: TextStyle(color: kInk, fontSize: 16, fontWeight: FontWeight.w600),
     ),
     cardTheme: CardThemeData(
       color: Colors.white, elevation: 0, margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: kBorder)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(cardR), side: BorderSide(color: border)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true, fillColor: Colors.white,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorder)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorder)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: ob(strong), enabledBorder: ob(strong), focusedBorder: ob(accent),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        minimumSize: const Size.fromHeight(46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ctrlR)),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        minimumSize: const Size.fromHeight(44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ctrlR)),
+        side: BorderSide(color: strong), foregroundColor: kInk, textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(

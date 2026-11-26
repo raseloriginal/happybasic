@@ -1,13 +1,15 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
 import '../core/format.dart';
+import '../core/offline.dart';
 import '../core/session.dart';
 import '../core/tracker.dart';
 import '../ui/account.dart';
 import '../ui/common.dart';
+import '../ui/dkit.dart';
+import '../ui/pwa_kit.dart';
 import '../ui/tracker_banner.dart';
 import '../ui/update.dart';
 import 'attendance_page.dart';
@@ -18,6 +20,7 @@ import 'van_stock_page.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
+/// DSR panel shell — same 5 tabs as the PWA bottom nav, top bar on every tab except the full-screen delivery map.
 class DsrHome extends StatefulWidget {
   const DsrHome({super.key});
   @override
@@ -36,31 +39,41 @@ class _DsrHomeState extends State<DsrHome> {
     });
   }
 
+  Future<void> _logout() async {
+    final q = OfflineQueue.instance.ops.length;
+    if (await confirm(context, 'সাইন আউট করবেন?', body: q > 0 ? 'এখনো ${bn(q)}টি কাজ সিঙ্ক হয়নি। সাইন আউট করলে সেগুলো মুছে যাবে।' : null, danger: true, yes: 'সাইন আউট')) {
+      if (mounted) await context.read<AuthState>().logout();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    const titles = ['হোম', 'ডেলিভারি', 'ভ্যান স্টক', 'খরচ', 'সেটেলমেন্ট'];
+    const titles = ['ড্যাশবোর্ড', 'ডেলিভারি', 'ভ্যান স্টক', 'সেটেলমেন্ট', 'খরচ'];
     return Scaffold(
-      appBar: AppBar(
-        title: Text(titles[_tab]),
-        actions: [
-          const SyncChip(),
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _DsrAccountPage())),
-          ),
-        ],
-      ),
-      body: IndexedStack(index: _tab, children: const [_DsrDashboard(), DeliveryPage(), VanStockPage(), ExpensePage(), SettlementPage()]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'হোম'),
-          NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: 'ডেলিভারি'),
-          NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'ভ্যান'),
-          NavigationDestination(icon: Icon(Icons.payments_outlined), selectedIcon: Icon(Icons.payments), label: 'খরচ'),
-          NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'সেটেলমেন্ট'),
-        ],
+      backgroundColor: DC.outer,
+      body: Frame(
+        color: DC.outer,
+        child: ColoredBox(
+          color: DC.bg,
+          child: Column(children: [
+            if (_tab != 1)
+              DTopBar(title: titles[_tab], actions: [
+                const Padding(padding: EdgeInsets.only(left: 8), child: SyncChip()),
+                DIconBtn(icon: Ic.user, tooltip: 'আমি', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _DsrAccountPage()))),
+                DIconBtn(icon: Ic.logout, tooltip: 'সাইন আউট', onTap: _logout),
+              ]),
+            Expanded(
+              child: IndexedStack(index: _tab, children: [
+                _DsrDashboard(onGo: (i) => setState(() => _tab = i)),
+                const DeliveryPage(),
+                const VanStockPage(),
+                const SettlementPage(),
+                const ExpensePage(),
+              ]),
+            ),
+            DBottomNav(index: _tab, onTap: (i) => setState(() => _tab = i)),
+          ]),
+        ),
       ),
     );
   }
@@ -72,22 +85,21 @@ class _DsrAccountPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.watch<AuthState>().profile;
     final photo = ApiClient.asset(p['photo']);
-    return Scaffold(
-      appBar: AppBar(title: const Text('আমি')),
-      body: ListView(padding: const EdgeInsets.all(14), children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(children: [
-              CircleAvatar(radius: 32, backgroundImage: photo == null ? null : CachedNetworkImageProvider(photo), child: photo == null ? const Icon(Icons.person, size: 30) : null),
-              const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${p['name']}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                Text('${p['code'] ?? ''} · ${p['phone']}', style: const TextStyle(color: kMuted)),
-                Text('${p['partner'] ?? ''}', style: const TextStyle(color: kMuted, fontSize: 12.5)),
-              ])),
-            ]),
-          ),
+    return DPage(
+      title: 'আমি',
+      child: ListView(padding: const EdgeInsets.all(14), children: [
+        DCard(
+          child: Row(children: [
+            ClipOval(child: SizedBox(width: 60, height: 60, child: NetImage(photo, fallback: Container(color: DC.subtle, child: const Icon(Icons.person, size: 30, color: DC.muted))))),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${p['name']}', style: ts(18, w: FontWeight.w700)),
+                Text('${p['code'] ?? ''} · ${p['phone']}', style: ts(13, color: DC.muted)),
+                Text('${p['partner'] ?? ''}', style: ts(12.5, color: DC.muted)),
+              ]),
+            ),
+          ]),
         ),
         const SizedBox(height: 12),
         const AccountCard(),
@@ -96,99 +108,131 @@ class _DsrAccountPage extends StatelessWidget {
   }
 }
 
-class _DsrDashboard extends StatelessWidget {
-  const _DsrDashboard();
+class _DsrDashboard extends StatefulWidget {
+  const _DsrDashboard({required this.onGo});
+  final ValueChanged<int> onGo;
+  @override
+  State<_DsrDashboard> createState() => _DsrDashboardState();
+}
+
+class _DsrDashboardState extends State<_DsrDashboard> {
+  String? _date;
+
+  static const _icons = {
+    'att': '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M20 20h-3v-3"/>',
+  };
+
   @override
   Widget build(BuildContext context) {
     return AsyncBody(
-      load: () => loadCached('dsr_dashboard', () => ApiClient.get('/dsr/dashboard')),
+      key: ValueKey(_date),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+      load: () => loadCached('dsr_dashboard_${_date ?? 'open'}', () => ApiClient.get('/dsr/dashboard', query: {'date': _date})),
       builder: (context, d, reload) {
         final trip = d['trip'] == null ? null : _m(d['trip']);
-        final stats = _m(d['stats']);
+        final s = _m(d['stats']);
         final att = d['attendance'] == null ? null : _m(d['attendance']);
-        final settle = d['settlement'] == null ? null : _m(d['settlement']);
+        final sum = d['settlement'] == null ? <String, dynamic>{} : _m(d['settlement']);
+        final date = d['date'].toString();
+        final today = d['today']?.toString() ?? todayYmd();
+        final stops = int0(s['stops']), cancelled = int0(s['cancelled']), delivered = int0(s['delivered']);
+        final total = (stops - cancelled) < 1 ? 1 : stops - cancelled;
+        final pct = stops > 0 ? (delivered / total * 100).round().clamp(0, 100) : 0;
         final scanned = att != null && att['checked_in_at'] != null;
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('স্বাগতম, ${_m(d['dsr'])['name']}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-          Text(dateBn(d['date']?.toString()), style: const TextStyle(color: kMuted)),
-          const SizedBox(height: 12),
+        final attLabel = scanned ? 'হাজিরা — ${date == today ? 'আজ ' : ''}${timeBn(att['checked_in_at']?.toString())}-এ সম্পন্ন' : 'হাজিরা — QR স্ক্যান করুন';
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          DDateNav(date: date, onChange: (v) => setState(() => _date = v == today ? null : v)),
+          const SizedBox(height: 14),
           const TrackerBanner(role: 'dsr'),
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(backgroundColor: scanned ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7), child: Icon(scanned ? Icons.check : Icons.qr_code_scanner, color: scanned ? kOk : kWarn)),
-              title: Text(scanned ? 'হাজিরা সম্পন্ন · ${timeBn(att['checked_in_at']?.toString())}' : 'আজকের হাজিরা বাকি', style: const TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: Text(scanned ? (int0(att['late_min']) > 0 ? '${bn(att['late_min'])} মিনিট দেরি' : 'সময়মতো') : 'গোডাউনের QR স্ক্যান করুন'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AttendancePage())).then((_) => reload()),
-            ),
-          ),
-          const SizedBox(height: 10),
           if (trip == null)
-            const Card(child: Padding(padding: EdgeInsets.all(18), child: Text('আজ আপনার কোনো ট্রিপ নেই। পার্টনার ট্রিপ দিলে এখানে দেখা যাবে।', style: TextStyle(color: kMuted))))
+            DCard(padding: const EdgeInsets.fromLTRB(18, 22, 18, 22), child: Center(child: Text('কোনো ডিসপ্যাচ করা ট্রিপ নেই', style: ts(15, w: FontWeight.w600))))
           else ...[
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.route, color: kBlue),
-                title: Text('${trip['code']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${dateBn(trip['date']?.toString())}'),
-                trailing: Pill(_tripStatus(trip), color: trip['status_key'] == 'settled' ? kOk : kBlue),
-              ),
-            ),
-            if (trip['settlement_status'] == 'returned' && trip['review_note'] != null)
-              Container(
-                margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(12), width: double.infinity,
-                decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)),
-                child: Text('পার্টনার সেটেলমেন্ট ফেরত পাঠিয়েছেন: ${trip['review_note']}', style: const TextStyle(color: kDanger)),
-              ),
-            const SectionTitle('আজকের ডেলিভারি'),
-            GridView.count(
-              crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.9,
-              children: [
-                StatTile('মোট দোকান', bn(stats['stops']), icon: Icons.storefront),
-                StatTile('ডেলিভারি হয়েছে', bn(stats['delivered']), color: kOk, icon: Icons.check_circle_outline),
-                StatTile('বাকি আছে', bn(stats['pending']), color: kWarn, icon: Icons.hourglass_empty),
-                StatTile('বাতিল', bn(stats['cancelled']), color: kDanger, icon: Icons.cancel_outlined),
-                StatTile('ভ্যানে মাল (পিস)', bn(stats['available_pcs']), icon: Icons.inventory_2_outlined),
-                StatTile('বাকিতে দেওয়া', bn(stats['due']), color: kDanger, icon: Icons.account_balance_wallet_outlined),
-              ],
-            ),
-            if (settle != null) ...[
-              const SectionTitle('আজকের হিসাব'),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(children: [
-                    _row('ডেলিভারির বিল', money(settle['total_sales_sr'])),
-                    _row('রেডি সেল', money(settle['ready_sale'])),
-                    _row('পুরনো বাকি আদায়', money(settle['prior_due_collected'])),
-                    _row('ড্যামেজ', '-${money(settle['damaged_amount'])}'),
-                    _row('খরচ', '-${money(settle['daily_expenses'])}'),
-                    _row('নতুন বাকি', '-${money(settle['retailer_due'])}'),
-                    const Divider(),
-                    _row('জমা দেওয়ার টাকা', money(settle['net_pay']), bold: true),
+            if (trip['editable'] != true)
+              const Padding(padding: EdgeInsets.only(bottom: 12), child: DBanner('সেটেলমেন্ট জমা দেওয়া হয়েছে — পার্টনারের যাচাইয়ের অপেক্ষায়।'))
+            else if (trip['settlement_status'] == 'returned')
+              Padding(padding: const EdgeInsets.only(bottom: 12), child: DBanner('সেটেলমেন্ট ফেরত পাঠানো হয়েছে${trip['review_note'] != null && '${trip['review_note']}'.isNotEmpty ? ': ${trip['review_note']}' : ''}। সংশোধন করে পুনরায় জমা দিন।', returned: true)),
+            DCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('মোট দোকান', style: ts(11.5, w: FontWeight.w600, color: DC.muted)),
+                      const SizedBox(height: 4),
+                      Text(bn(stops), style: ts(32, w: FontWeight.w700, ls: -0.8, h: 1.1, tabular: true)),
+                      const SizedBox(height: 4),
+                      Text('${bn(delivered)} / ${bn(total)}টি ডেলিভারি হয়েছে', style: ts(13.5, w: FontWeight.w600, color: DC.ink2, tabular: true)),
+                    ]),
+                  ),
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    DBadge('${bn(pct)}% সম্পন্ন', tone: pct >= 100 ? DTone.success : DTone.info),
+                    const SizedBox(height: 4),
+                    Text(dateBn('${trip['date']}'), style: ts(12, color: DC.muted, tabular: true)),
                   ]),
-                ),
-              ),
-            ],
+                ]),
+                const SizedBox(height: 14),
+                DProgress(pct.toDouble(), complete: pct >= 100),
+                const SizedBox(height: 7),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Flexible(child: Text.rich(TextSpan(style: ts(12, color: DC.muted), children: [const TextSpan(text: 'ডেলিভারি: '), TextSpan(text: bn(delivered), style: ts(12, w: FontWeight.w700, color: DC.muted)), TextSpan(text: ' (বাকি ${bn(int0(s['due']))})')]))),
+                  const SizedBox(width: 8),
+                  Flexible(child: Text.rich(TextSpan(style: ts(12, color: DC.muted), children: [const TextSpan(text: 'অপেক্ষায়: '), TextSpan(text: bn(int0(s['pending'])), style: ts(12, w: FontWeight.w700, color: DC.muted)), const TextSpan(text: ' · বাতিল: '), TextSpan(text: bn(cancelled), style: ts(12, w: FontWeight.w700, color: DC.muted))]), textAlign: TextAlign.right)),
+                ]),
+              ]),
+            ),
+            const SizedBox(height: 14),
+            IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Expanded(child: _Mini('চলমান ট্রিপ', bn('${trip['code']}'), 'ভ্যানে বাকি ${bn(int0(s['available_pcs']))} / ${bn(int0(s['dispatched_pcs']))} পিস')),
+              const SizedBox(width: 10),
+              Expanded(child: _Mini('জমা দেওয়ার ক্যাশ', bnMoney(sum['net_pay'] ?? 0), 'খরচ ${bnMoney(sum['daily_expenses'] ?? 0)} · বাকি ${bnMoney(sum['retailer_due'] ?? 0)}')),
+            ])),
           ],
+          const SizedBox(height: 14),
+          _Quick(_icons['att']!, attLabel, () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AttendancePage())).then((_) => reload())),
+          _Quick(DBottomNav.items[1].icon, 'ডেলিভারি ম্যাপ ও দোকান', () => widget.onGo(1)),
+          _Quick(DBottomNav.items[2].icon, 'ভ্যান স্টক সারাংশ', () => widget.onGo(2)),
+          _Quick(DBottomNav.items[3].icon, 'ট্রিপ সেটেলমেন্ট ও নোট গণনা', () => widget.onGo(3)),
+          _Quick(DBottomNav.items[4].icon, 'ট্রিপ খরচ', () => widget.onGo(4)),
         ]);
       },
     );
   }
+}
 
-  static String _tripStatus(Map<String, dynamic> t) => switch (t['status_key']) {
-        'pending' => 'প্রস্তুত হচ্ছে',
-        'dispatched' => 'চলছে',
-        'in_review' => 'যাচাইয়ে',
-        'settled' => 'সেটেলড',
-        _ => '${t['status_key']}',
-      };
-
-  static Widget _row(String k, String v, {bool bold = false}) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(children: [
-          Expanded(child: Text(k, style: TextStyle(fontWeight: bold ? FontWeight.w800 : FontWeight.w500))),
-          Text(v, style: TextStyle(fontWeight: bold ? FontWeight.w800 : FontWeight.w600, fontSize: bold ? 17 : 14)),
+class _Mini extends StatelessWidget {
+  const _Mini(this.label, this.value, this.sub);
+  final String label, value, sub;
+  @override
+  Widget build(BuildContext context) => DCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: ts(12, color: DC.muted)),
+          const SizedBox(height: 3),
+          Text(value, style: ts(17.5, w: FontWeight.w700, h: 1.2, tabular: true)),
+          const SizedBox(height: 3),
+          Text(sub, style: ts(12, color: DC.muted, tabular: true)),
         ]),
+      );
+}
+
+class _Quick extends StatelessWidget {
+  const _Quick(this.icon, this.label, this.onTap);
+  final String icon, label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: DCard(
+          padding: const EdgeInsets.all(14), onTap: onTap,
+          child: Row(children: [
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(color: DC.subtle, borderRadius: BorderRadius.circular(9), border: Border.all(color: DC.border)),
+              child: Center(child: Svg(icon, size: 18, color: DC.ink, stroke: 1.9)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label, style: ts(13.5, w: FontWeight.w600))),
+            Text('→', style: ts(16, color: DC.muted)),
+          ]),
+        ),
       );
 }

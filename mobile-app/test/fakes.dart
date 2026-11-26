@@ -125,6 +125,7 @@ Map<String, dynamic> defaultRoutes(String key) {
         'ok': true, 'server_time': 1795587450,
         'products': [_product(1, 'Salman khan'), _product(2, 'বাংলা পণ্য', stock: 3)],
         'retailers': [
+          {'id': '261', 'name': 'রাজকুমার স্টোর', 'phone': '01712345678', 'address': 'বাজার', 'lat': 24.28, 'lng': 88.75, 'sr_id': 4, 'due': 0},
           for (var i = 0; i < 30; i++)
             {'id': '${100 + i}', 'name': 'দোকান $i', 'phone': i.isEven ? '' : '01712-3456$i', 'address': 'ঠিকানা $i', 'lat': 24.28 + i / 1000, 'lng': 88.75, 'sr_id': 4, 'due': i == 3 ? 500 : 0}
         ],
