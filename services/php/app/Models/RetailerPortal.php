@@ -244,12 +244,12 @@ final class RetailerPortal
         }
 
         foreach (self::db()->fetchAll(
-            "SELECT t.id, t.dispatched_at, t.trip_date, dm.name AS dm, pa.name AS partner, SUM(o.order_sr_total) AS total,
+            "SELECT t.id, MAX(t.dispatched_at) AS dispatched_at, MAX(t.trip_date) AS trip_date, MAX(dm.name) AS dm, MAX(pa.name) AS partner, SUM(o.order_sr_total) AS total,
                     GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ' + ') AS companies
              FROM orders o JOIN trips t ON t.id = o.trip_id JOIN delivery_men dm ON dm.id = t.dsr_id JOIN companies c ON c.id = o.company_id
              JOIN partners pa ON pa.id = o.partner_id
              WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND t.dispatched_at >= ?
-             GROUP BY t.id ORDER BY t.dispatched_at DESC",
+             GROUP BY t.id ORDER BY MAX(t.dispatched_at) DESC",
             [$since]
         ) as $r) {
             $ev[] = ['kind' => 'onway', 'at' => $r['dispatched_at'], 'title' => "{$r['dm']} আসছে · {$r['companies']}-এর মাল",
