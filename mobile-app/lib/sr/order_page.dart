@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../core/api.dart';
 import '../core/format.dart';
+import '../core/geo_filter.dart';
 import '../core/offline.dart';
 import '../core/realtime.dart';
 import '../core/tracker.dart';
@@ -14,6 +15,7 @@ import '../ui/base_map.dart';
 import '../ui/common.dart';
 import '../ui/pwa_kit.dart';
 import '../ui/hkit.dart';
+import '../ui/me_layer.dart';
 import '../ui/tracker_banner.dart';
 import 'add_retailer.dart';
 import 'order_editor.dart';
@@ -22,7 +24,9 @@ Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map
 
 /// SR2 · দোকান বাছুন: full-screen map, search, numbered shop pins, nearby sheet (nearest first).
 class OrderPage extends StatefulWidget {
-  const OrderPage({super.key, this.onBack});
+  const OrderPage({super.key, this.onBack, this.active = true});
+  /// The tab is on screen: live GPS runs only then.
+  final bool active;
   /// Back to the আজ tab (the design's round back button).
   final VoidCallback? onBack;
   @override
@@ -38,6 +42,7 @@ class _OrderPageState extends State<OrderPage> {
   String _q = '';
   bool _collapsed = false;
   String? _focusedId;
+  bool _follow = true; // the camera glides with me until I drag the map
 
   Map<String, dynamic>? _data;
   Object? _error;
@@ -52,6 +57,7 @@ class _OrderPageState extends State<OrderPage> {
     _sync = OfflineQueue.instance.onSynced.listen((_) => _load(silent: true));
     _live = Realtime.instance.events.listen((_) => _load(silent: true));
     _searchFocus.addListener(() => setState(() {}));
+    Tracker.instance.fix.addListener(_onFix);
     Tracker.currentOnce().then((p) {
       if (p != null && mounted) {
         setState(() {
@@ -65,11 +71,23 @@ class _OrderPageState extends State<OrderPage> {
 
   @override
   void dispose() {
+    Tracker.instance.fix.removeListener(_onFix);
     _sync?.cancel();
     _live?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// Distances follow me; rebuilt only after a few metres (the dot itself is animated by [MeLayer]).
+  void _onFix() {
+    final f = Tracker.instance.fix.value;
+    if (f == null || !mounted) return;
+    if (_lat != null && GeoFilter.metres(_lat!, _lng!, f.lat, f.lng) < 4) return;
+    setState(() {
+      _lat = f.lat;
+      _lng = f.lng;
+    });
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -144,7 +162,10 @@ class _OrderPageState extends State<OrderPage> {
     }
     shop ??= {'id': retailerId, 'name': existing?['retailer'] ?? 'দোকান', 'address': existing?['retailer_address'] ?? ''};
     shop['_dist'] = shop['lat'] == null ? null : _distText(_dist(shop));
-    setState(() => _focusedId = '$retailerId');
+    setState(() {
+      _focusedId = '$retailerId';
+      _follow = false;
+    });
     if (shop['lat'] != null && num0(shop['lat']) != 0) _moveTo(num0(shop['lat']), num0(shop['lng']), 18);
     final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => OrderEditorPage(shop: shop!, products: products.map(_m).toList(), existing: existing),
@@ -276,7 +297,10 @@ class _OrderPageState extends State<OrderPage> {
                   onTap: () {
                     _searchFocus.unfocus();
                     final lat = num0(rows[i]['lat']), lng = num0(rows[i]['lng']);
-                    setState(() => _focusedId = '${rows[i]['id']}');
+                    setState(() {
+                      _focusedId = '${rows[i]['id']}';
+                      _follow = false;
+                    });
                     if (lat != 0) _moveTo(lat, lng, 18);
                   },
                   child: Container(
@@ -302,11 +326,15 @@ class _OrderPageState extends State<OrderPage> {
       color: const Color(0xFFE9EEF6),
       child: FlutterMap(
         mapController: _map,
-        options: MapOptions(initialCenter: center, initialZoom: 18, maxZoom: 21, interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate)),
+        options: MapOptions(
+          initialCenter: center, initialZoom: 18, maxZoom: 21,
+          interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+          onPositionChanged: (_, byUser) {
+            if (byUser && _follow) setState(() => _follow = false);
+          },
+        ),
         children: [
           if (kMapTiles) const BaseMapLayer(),
-          if (_lat != null)
-            CircleLayer(circles: [CircleMarker(point: LatLng(_lat!, _lng!), radius: _scopeMetres, useRadiusInMeter: true, color: const Color(0x1A1F4FE0), borderColor: const Color(0x8C1F4FE0), borderStrokeWidth: 1.5)]),
           MarkerLayer(markers: [
             for (final r in shown)
               if (num0(r['lat']) != 0)
@@ -317,12 +345,8 @@ class _OrderPageState extends State<OrderPage> {
                     child: _pin('${r['name']}', numbers['${r['id']}'], '${r['id']}' == _focusedId),
                   ),
                 ),
-            if (_lat != null)
-              Marker(
-                point: LatLng(_lat!, _lng!), width: 30, height: 30,
-                child: Container(decoration: BoxDecoration(color: HC.blue, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Color(0x2E1F4FE0), spreadRadius: 12)])),
-              ),
           ]),
+          MeLayer(map: _map, active: widget.active, follow: _follow, scopeMetres: _scopeMetres, initial: _lat == null ? null : LatLng(_lat!, _lng!)),
         ],
       ),
     );
@@ -384,6 +408,7 @@ class _OrderPageState extends State<OrderPage> {
                 child: GestureDetector(
                   onTap: () {
                     if (_lat != null) _moveTo(_lat!, _lng!, 18);
+                    setState(() => _follow = true);
                   },
                   child: Container(width: 34, height: 34, decoration: const BoxDecoration(color: HC.bg, shape: BoxShape.circle),
                       child: const Icon(Icons.my_location_rounded, size: 18, color: HC.ink)),

@@ -60,7 +60,7 @@ class _SrHomeState extends State<SrHome> {
               child: Stack(children: [
                 IndexedStack(index: _tab, children: [
                   SrDashboardPage(onNewOrder: () => _go(1), onHistory: () => _go(2)),
-                  lazy(1, () => OrderPage(onBack: () => _go(0))),
+                  lazy(1, () => OrderPage(onBack: () => _go(0), active: _tab == 1)),
                   lazy(2, () => const SrHistoryPage()),
                   lazy(3, () => const SrProfilePage()),
                 ]),

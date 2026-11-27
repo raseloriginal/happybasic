@@ -79,7 +79,7 @@ class _DsrHomeState extends State<DsrHome> {
               child: Stack(children: [
                 IndexedStack(index: _tab, children: [
                   _TodayPage(onShops: () => _go(1)),
-                  lazy(1, () => const DeliveryPage()),
+                  lazy(1, () => DeliveryPage(active: _tab == 1)),
                   lazy(2, () => const VanStockPage()),
                   lazy(3, () => const _MePage()),
                 ]),

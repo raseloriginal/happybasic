@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../core/api.dart';
 import '../core/format.dart';
+import '../core/geo_filter.dart';
 import '../core/offline.dart';
 import '../core/realtime.dart';
 import '../core/tracker.dart';
@@ -14,6 +15,7 @@ import '../ui/base_map.dart';
 import '../ui/common.dart';
 import '../ui/dkit.dart';
 import '../ui/hkit.dart';
+import '../ui/me_layer.dart';
 import '../ui/pwa_kit.dart';
 import 'ready_sale_page.dart';
 import 'stop_page.dart';
@@ -85,7 +87,9 @@ Future<bool?> openStop(BuildContext context, Map<String, dynamic> s, Map<String,
 
 /// DM2 — today's shops: sky header (done / cash), route map with numbered pins, the route list.
 class DeliveryPage extends StatefulWidget {
-  const DeliveryPage({super.key});
+  const DeliveryPage({super.key, this.active = true});
+  /// The tab is on screen: live GPS runs only then.
+  final bool active;
   @override
   State<DeliveryPage> createState() => _DeliveryPageState();
 }
@@ -94,6 +98,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
   final _map = MapController();
   String? _date; // null = the open trip
   double? _lat, _lng;
+  bool _follow = false; // the map opens on the whole route; the my-location button follows me
   Map<String, dynamic>? _data;
   Object? _error;
   bool _loading = true;
@@ -106,6 +111,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
     _load();
     _sync = OfflineQueue.instance.onSynced.listen((_) => _load(silent: true));
     _live = Realtime.instance.events.listen((_) => _load(silent: true));
+    Tracker.instance.fix.addListener(_onFix);
     Tracker.currentOnce().then((p) {
       if (p != null && mounted) {
         setState(() {
@@ -118,9 +124,32 @@ class _DeliveryPageState extends State<DeliveryPage> {
 
   @override
   void dispose() {
+    Tracker.instance.fix.removeListener(_onFix);
     _sync?.cancel();
     _live?.cancel();
     super.dispose();
+  }
+
+  /// Distances follow me; rebuilt only after a few metres (the dot itself is animated by [MeLayer]).
+  void _onFix() {
+    final f = Tracker.instance.fix.value;
+    if (f == null || !mounted) return;
+    if (_lat != null && GeoFilter.metres(_lat!, _lng!, f.lat, f.lng) < 4) return;
+    setState(() {
+      _lat = f.lat;
+      _lng = f.lng;
+    });
+  }
+
+  void _followMe() {
+    if (_lat == null) {
+      toast(context, Tracker.instance.problem ?? 'লোকেশন পাওয়া যায়নি।', error: true);
+      return;
+    }
+    try {
+      _map.move(LatLng(_lat!, _lng!), 17);
+    } catch (_) {/* map not ready */}
+    setState(() => _follow = true);
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -252,11 +281,25 @@ class _DeliveryPageState extends State<DeliveryPage> {
                     Positioned(
                       right: 10, top: 10,
                       child: Semantics(button: true, label: 'সব দোকান দেখুন', child: GestureDetector(
-                        onTap: () => _fitAll(stops),
+                        onTap: () {
+                          setState(() => _follow = false);
+                          _fitAll(stops);
+                        },
                         child: Container(
                           width: 40, height: 40,
                           decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: HC.liftSm),
                           child: const Center(child: Svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>', size: 18, color: HC.ink)),
+                        ),
+                      )),
+                    ),
+                    Positioned(
+                      right: 10, top: 58,
+                      child: Semantics(button: true, label: 'আমার অবস্থানে আনুন', child: GestureDetector(
+                        onTap: _followMe,
+                        child: Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(color: _follow ? HC.blue : Colors.white, shape: BoxShape.circle, boxShadow: HC.liftSm),
+                          child: Icon(Icons.my_location_rounded, size: 18, color: _follow ? Colors.white : HC.ink),
                         ),
                       )),
                     ),
@@ -333,6 +376,9 @@ class _DeliveryPageState extends State<DeliveryPage> {
           initialCenter: center, initialZoom: 15, maxZoom: 21,
           interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
           onMapReady: () => _fitAll(stops),
+          onPositionChanged: (_, byUser) {
+            if (byUser && _follow) setState(() => _follow = false);
+          },
         ),
         children: [
           if (kMapTiles) const BaseMapLayer(),
@@ -357,12 +403,8 @@ class _DeliveryPageState extends State<DeliveryPage> {
                     }),
                   ),
                 ),
-            if (_lat != null)
-              Marker(
-                point: LatLng(_lat!, _lng!), width: 22, height: 22,
-                child: Container(decoration: BoxDecoration(color: HC.blue, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Color(0x401F4FE0), spreadRadius: 6)])),
-              ),
           ]),
+          MeLayer(map: _map, active: widget.active, follow: _follow, initial: _lat == null ? null : LatLng(_lat!, _lng!)),
         ],
       ),
     );

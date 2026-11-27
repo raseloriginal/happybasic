@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'api.dart';
+import 'geo_filter.dart';
 import 'store.dart';
 
 /// GPS trail of the signed-in SR or DSR. Runs as an Android foreground service (a notification stays visible)
@@ -26,6 +27,14 @@ class Tracker extends ChangeNotifier {
   bool running = false;
   String? problem; // shown to the user: permission / GPS off
   Position? last;
+
+  /// Smoothed position for the maps; [heading] (degrees from north) is set only while moving.
+  final ValueNotifier<({double lat, double lng, double accuracy, double? heading})?> fix = ValueNotifier(null);
+  GeoFilter _filter = GeoFilter();
+  int _liveHolders = 0; // maps on screen
+  bool _live = false; // which settings the running stream uses
+  Future<void> _switching = Future.value();
+  Position? _sent; // last point put in the server buffer
 
   Future<bool> ensurePermission() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
@@ -56,10 +65,16 @@ class Tracker extends ChangeNotifier {
     running = true;
     notifyListeners();
 
+    _listen();
+    _flushTimer = Timer.periodic(const Duration(seconds: 30), (_) => flush());
+  }
+
+  void _listen() {
+    _live = _liveHolders > 0;
     final settings = AndroidSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 20,
-      intervalDuration: const Duration(seconds: 20),
+      accuracy: _live ? LocationAccuracy.bestForNavigation : LocationAccuracy.high,
+      distanceFilter: _live ? 0 : 20,
+      intervalDuration: Duration(seconds: _live ? 1 : 20),
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'হ্যাপি বাংলাদেশ',
         notificationText: 'লোকেশন ট্র্যাকিং চালু আছে',
@@ -71,7 +86,22 @@ class Tracker extends ChangeNotifier {
       problem = 'লোকেশন পাওয়া যাচ্ছে না।';
       notifyListeners();
     });
-    _flushTimer = Timer.periodic(const Duration(seconds: 30), (_) => flush());
+  }
+
+  /// A map calls this with true when it comes on screen and false when it leaves: one fix per second while any
+  /// map is visible, the battery-friendly rate otherwise. Geolocator shares a single position stream, so the
+  /// stream is closed and reopened with the other settings.
+  Future<void> setLive(bool on) {
+    _liveHolders += on ? 1 : -1;
+    if (_liveHolders < 0) _liveHolders = 0;
+    return _switching = _switching.then((_) async {
+      final sub = _sub;
+      if (!running || sub == null || _live == (_liveHolders > 0)) return;
+      final gen = _gen;
+      _sub = null;
+      await sub.cancel();
+      if (gen == _gen && running) _listen();
+    });
   }
 
   Future<int?> _batteryLevel() async {
@@ -86,6 +116,14 @@ class Tracker extends ChangeNotifier {
   Future<void> _onPosition(Position p) async {
     last = p;
     if (p.isMocked) return; // fake-GPS apps are ignored
+    _updateFix(p);
+    // The server trail keeps its old density (a point at most every 20 s and 20 m), also at the live rate.
+    final prev = _sent;
+    if (prev != null &&
+        (p.timestamp.difference(prev.timestamp).inSeconds < 20 || GeoFilter.metres(prev.latitude, prev.longitude, p.latitude, p.longitude) < 20)) {
+      return;
+    }
+    _sent = p;
     final bat = await _batteryLevel();
     _buffer.add({
       't': p.timestamp.millisecondsSinceEpoch ~/ 1000,
@@ -98,6 +136,12 @@ class Tracker extends ChangeNotifier {
     LocalStore.writeJson(_bufferKey, _buffer);
     if (_buffer.length >= 6) flush();
     notifyListeners();
+  }
+
+  void _updateFix(Position p) {
+    final f = _filter.push(lat: p.latitude, lng: p.longitude, accuracy: p.accuracy, speed: p.speed, timeMs: p.timestamp.millisecondsSinceEpoch);
+    if (f == null) return;
+    fix.value = (lat: f.lat, lng: f.lng, accuracy: f.accuracy, heading: p.speed > 0.8 && p.heading >= 0 ? p.heading : null);
   }
 
   Future<void> flush() async {
@@ -126,6 +170,9 @@ class Tracker extends ChangeNotifier {
     _sub = null;
     running = false;
     _buffer.clear();
+    _sent = null;
+    _filter = GeoFilter();
+    fix.value = null;
     notifyListeners();
     await sub?.cancel();
     await LocalStore.deleteJson(_bufferKey);
