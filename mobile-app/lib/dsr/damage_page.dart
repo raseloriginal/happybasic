@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/format.dart';
 import '../core/offline.dart';
 import '../ui/common.dart';
+import '../ui/dkit.dart';
 
 /// Damaged goods returned by a shop: deducted from that shop's bill at the dealer price.
 class DamagePage extends StatefulWidget {
@@ -72,9 +73,9 @@ class _DamagePageState extends State<DamagePage> {
   Widget build(BuildContext context) {
     final q = _q.trim().toLowerCase();
     final products = widget.products.where((p) => q.isEmpty || '${p['name']}'.toLowerCase().contains(q)).toList();
-    return Scaffold(
-      appBar: AppBar(title: const Text('ড্যামেজ')),
-      body: Column(children: [
+    return DPage(
+      title: 'ড্যামেজ',
+      child: Column(children: [
         Padding(
           padding: const EdgeInsets.all(14),
           child: DropdownButtonFormField<int>(

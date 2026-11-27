@@ -40,6 +40,10 @@ $hasCustomHeader = in_array($active, ['dashboard', 'order', 'history', 'profile'
     <link rel="icon" type="image/jpeg" href="<?= e(asset('images/logo.jpg')) ?>">
     <link rel="preconnect" href="https://mt0.google.com">
     <link rel="preconnect" href="https://mt1.google.com">
+    <meta name="theme-color" content="#1A3FD6">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;600;700;800&display=swap">
     <link rel="stylesheet" href="<?= e(asset('vendor/leaflet/leaflet.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('sr/css/sr.css')) ?>">
     <noscript><style>#appBootLoader{display:none!important;}</style></noscript>

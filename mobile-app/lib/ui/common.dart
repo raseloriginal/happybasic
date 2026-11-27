@@ -9,62 +9,75 @@ import '../core/format.dart';
 import '../core/offline.dart';
 import '../core/realtime.dart';
 import '../core/store.dart';
+import 'dkit.dart';
 
-const kBlue = Color(0xFF1A4FD8);
-const kInk = Color(0xFF0F172A);
-const kMuted = Color(0xFF64748B);
-const kBg = Color(0xFFF3F6FB);
+const kBlue = Color(0xFF1F4FE0);
+const kInk = Color(0xFF0A1640);
+const kMuted = Color(0xFF5B6785);
+const kBg = Color(0xFFF4F6FB);
 const kOk = Color(0xFF15803D);
 const kWarn = Color(0xFFD97706);
 const kDanger = Color(0xFFDC2626);
-const kBorder = Color(0xFFE2E8F0);
+const kBorder = Color(0xFFE6EAF2);
 
-/// App theme. SR and DSR screens that are pushed on top of the tabs follow their PWA panel's tokens
-/// (SR: cobalt, radius 10/16 · DSR: black accent, radius 8/12); the retailer panel draws its own widgets.
+/// App theme: one design ("Happy অ্যাপ ডিজাইন") for every role — navy ink, blue accent, Hind Siliguri.
 ThemeData buildTheme({String? role}) {
-  final dsr = role == 'dsr';
-  final accent = dsr ? const Color(0xFF111827) : kBlue;
-  final bg = dsr ? const Color(0xFFF7F8FA) : kBg;
-  final border = dsr ? const Color(0xFFE4E7EC) : kBorder;
-  final strong = dsr ? const Color(0xFFD0D5DD) : const Color(0xFFCBD5E1);
-  final cardR = dsr ? 12.0 : 16.0;
-  final ctrlR = dsr ? 8.0 : 10.0;
-  final scheme = ColorScheme.fromSeed(seedColor: accent, primary: accent, surface: Colors.white);
-  OutlineInputBorder ob(Color c) => OutlineInputBorder(borderRadius: BorderRadius.circular(ctrlR), borderSide: BorderSide(color: c));
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: scheme,
-    scaffoldBackgroundColor: bg,
+  const accent = Color(0xFF1F4FE0);
+  const ink = Color(0xFF0A1640);
+  const line = Color(0xFFE6EAF2);
+  const strong = Color(0xFFD5DCEB);
+  final scheme = ColorScheme.fromSeed(seedColor: accent, primary: accent, surface: Colors.white, onSurface: ink);
+  OutlineInputBorder ob(Color c, [double w = 1.5]) => OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c, width: w));
+  final base = ThemeData(useMaterial3: true, fontFamily: 'HindSiliguri', fontFamilyFallback: const ['Inter'], colorScheme: scheme);
+  return base.copyWith(
+    scaffoldBackgroundColor: const Color(0xFFF4F6FB),
+    textTheme: base.textTheme.apply(bodyColor: ink, displayColor: ink),
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+    }),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.white, foregroundColor: kInk, elevation: 0, scrolledUnderElevation: 0, centerTitle: false, toolbarHeight: 54,
-      shape: Border(bottom: BorderSide(color: kBorder)),
-      titleTextStyle: TextStyle(color: kInk, fontSize: 16, fontWeight: FontWeight.w600),
+      backgroundColor: Color(0xFFF4F6FB), foregroundColor: ink, elevation: 0, scrolledUnderElevation: 0, centerTitle: false, toolbarHeight: 56,
+      titleTextStyle: TextStyle(fontFamily: 'HindSiliguri', color: ink, fontSize: 18, fontWeight: FontWeight.w700),
     ),
     cardTheme: CardThemeData(
       color: Colors.white, elevation: 0, margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(cardR), side: BorderSide(color: border)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: line)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true, fillColor: Colors.white,
       border: ob(strong), enabledBorder: ob(strong), focusedBorder: ob(accent),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      hintStyle: const TextStyle(color: Color(0xFF9AA4BE)),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ctrlR)),
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        backgroundColor: ink, foregroundColor: Colors.white,
+        minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(fontFamily: 'HindSiliguri', fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ctrlR)),
-        side: BorderSide(color: strong), foregroundColor: kInk, textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+        minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        side: const BorderSide(color: strong, width: 1.5), foregroundColor: ink,
+        textStyle: const TextStyle(fontFamily: 'HindSiliguri', fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
-    navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: Colors.white, indicatorColor: const Color(0xFFEFF4FF), height: 66,
-      labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: accent, textStyle: const TextStyle(fontFamily: 'HindSiliguri', fontWeight: FontWeight.w700))),
+    dialogTheme: DialogThemeData(
+      backgroundColor: Colors.white, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      titleTextStyle: const TextStyle(fontFamily: 'HindSiliguri', color: ink, fontSize: 18, fontWeight: FontWeight.w700),
+      contentTextStyle: const TextStyle(fontFamily: 'HindSiliguri', color: Color(0xFF475273), fontSize: 14, height: 1.45),
     ),
+    bottomSheetTheme: const BottomSheetThemeData(backgroundColor: Colors.white, surfaceTintColor: Colors.transparent, showDragHandle: false),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: ink, behavior: SnackBarBehavior.floating, insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      contentTextStyle: const TextStyle(fontFamily: 'HindSiliguri', color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+    ),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: accent),
+    dividerTheme: const DividerThemeData(color: line, thickness: 1, space: 1),
+    datePickerTheme: DatePickerThemeData(backgroundColor: Colors.white, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
   );
 }
 
@@ -72,7 +85,7 @@ void toast(BuildContext context, String message, {bool error = false}) {
   final m = ScaffoldMessenger.of(context);
   m.hideCurrentSnackBar();
   m.showSnackBar(SnackBar(
-    content: Text(message), behavior: SnackBarBehavior.floating, backgroundColor: error ? kDanger : kInk,
+    content: Text(message), behavior: SnackBarBehavior.floating, backgroundColor: error ? const Color(0xFFD92D20) : const Color(0xFF0A1640),
     duration: Duration(seconds: error ? 4 : 2),
   ));
 }
@@ -133,10 +146,13 @@ Future<Loaded> loadCached(String key, Future<Map<String, dynamic>> Function() ne
 
 /// Page body that loads data, supports pull-to-refresh, reloads after the offline queue syncs.
 class AsyncBody extends StatefulWidget {
-  const AsyncBody({super.key, required this.load, required this.builder, this.padding = const EdgeInsets.fromLTRB(14, 12, 14, 24)});
+  const AsyncBody({super.key, required this.load, required this.builder, this.padding = const EdgeInsets.fromLTRB(14, 12, 14, 24), this.sky = false, this.bottom = 24});
   final Future<Loaded> Function() load;
   final Widget Function(BuildContext, Map<String, dynamic> data, VoidCallback reload) builder;
   final EdgeInsets padding;
+  /// Design pages with a sky header: 18px sides, status-bar aware top; the offline note is a glass pill on the sky.
+  final bool sky;
+  final double bottom;
   @override
   State<AsyncBody> createState() => AsyncBodyState();
 }
@@ -185,6 +201,9 @@ class AsyncBodyState extends State<AsyncBody> {
 
   void reload() => _run(silent: true);
 
+  /// Was the data shown from the phone's cache (no internet)?
+  bool get stale => _data?.stale ?? false;
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -198,17 +217,41 @@ class AsyncBodyState extends State<AsyncBody> {
         Center(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(140, 44)), onPressed: _run, child: const Text('আবার চেষ্টা'))),
       ]);
     }
-    return RefreshIndicator(
+    final top = MediaQuery.of(context).padding.top;
+    final pad = widget.sky ? EdgeInsets.fromLTRB(18, top + 14, 18, widget.bottom) : widget.padding;
+    final list = RefreshIndicator(
+      color: kBlue,
+      edgeOffset: widget.sky ? top : 0,
       onRefresh: () => _run(silent: true),
       child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: widget.padding,
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        padding: pad,
         children: [
-          if (_data!.stale) const OfflineBanner(),
+          if (_data!.stale && !widget.sky) const OfflineBanner(),
           widget.builder(context, _data!.data, reload),
         ],
       ),
     );
+    if (!widget.sky || !_data!.stale) return list;
+    // Offline: a small floating note instead of a banner over the sky header.
+    return Stack(children: [
+      list,
+      Positioned(
+        left: 0, right: 0, bottom: 12,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(color: const Color(0xF00A1640), borderRadius: BorderRadius.circular(999),
+                boxShadow: const [BoxShadow(color: Color(0x330A1640), blurRadius: 16, offset: Offset(0, 6))]),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.wifi_off_rounded, size: 16, color: Color(0xFFA9C4FF)),
+              SizedBox(width: 8),
+              Text('অফলাইন · সংরক্ষিত তথ্য দেখানো হচ্ছে', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+        ),
+      ),
+    ]);
   }
 }
 
@@ -275,9 +318,9 @@ class PendingPage extends StatelessWidget {
   const PendingPage({super.key});
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('সিঙ্ক বাকি')),
-      body: ListenableBuilder(
+    return DPage(
+      title: 'সিঙ্ক বাকি',
+      child: ListenableBuilder(
         listenable: OfflineQueue.instance,
         builder: (context, _) {
           final ops = OfflineQueue.instance.ops;

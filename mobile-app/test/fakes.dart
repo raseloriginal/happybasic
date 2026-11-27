@@ -23,6 +23,11 @@ class ApiFail {
   final String message;
 }
 
+/// No internet for this route (the request never reaches the server).
+class NetFail {
+  const NetFail();
+}
+
 // ---------------------------------------------------------------- data (same shapes as /api/v1, see docs/api)
 
 Map<String, dynamic> _product(int id, String name, {int stock = 800}) => {
@@ -192,6 +197,7 @@ Map<String, dynamic> defaultRoutes(String key) {
     case 'GET /dsr/attendance':
       return {
         'ok': true, 'selectedDate': '2026-11-25', 'is_today': true, 'today': null,
+        'wage': {'worked': 21, 'daily_wage': 500, 'wage': 10500, 'over': 0, 'advance': 2000, 'short': 150, 'paid': 0, 'net': 8350},
         'days': [
           {'date': '2026-11-24', 'day': 24, 'weekday': 2, 'status': 'present', 'value': 1, 'manual': false, 'time': '2026-11-24 14:03:21', 'late_min': 303, 'distance': 0},
           {'date': '2026-11-25', 'day': 25, 'weekday': 3, 'status': 'absent', 'value': 0, 'manual': true, 'time': null, 'late_min': 0, 'distance': null},
@@ -247,6 +253,7 @@ MockClient fakeServer() => MockClient((req) async {
       calls.add('$key${req.body.isEmpty ? '' : ' ${req.body}'}');
       final o = overrides[key];
       if (o is ApiFail) return _json({'ok': false, 'message': o.message}, o.status);
+      if (o is NetFail) throw http.ClientException('offline', req.url);
       if (o != null) return _json(o);
       if (RegExp(r'^POST /dsr/stops/\d+$').hasMatch(key)) return _json({'ok': true, 'message': 'ডেলিভারি সংরক্ষিত হয়েছে।'});
       if (RegExp(r'^(PUT|DELETE) /sr/orders/\d+$').hasMatch(key)) return _json({'ok': true, 'message': 'ঠিক আছে'});

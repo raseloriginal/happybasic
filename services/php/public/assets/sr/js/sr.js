@@ -1211,27 +1211,26 @@
             return 'is-done';
         }
 
-        function buildNearbyCardHtml(r) {
+        function buildNearbyCardHtml(r, idx = 0) {
             const focused = focusedRetailerId === r.id;
             const ordered = orderForRetailer(r.id);
             const statusCls = srRetailerStatusClass(ordered);
-            const statusBadge = ordered
-                ? `<span class="badge ${ordered.status_key === 'cancelled' ? 'badge-danger' : 'badge-success'}">${escapeHtml(ordered.status_key === 'pending' ? 'অর্ডার হয়েছে' : bnStatus(ordered.status_key || ordered.status))}</span>`
-                : `<span class="badge badge-info">অর্ডার বাকি</span>`;
-            const bottomLeft = ordered ? 'আজকের অর্ডার' : 'পূর্বের বকেয়া';
-            const bottomRight = ordered ? formatMoney2(ordered.sr_total) : formatMoney2(r.due || 0);
-            const subText = escapeHtml(r.address || r.phone || 'অবস্থান পিনকৃত');
+            const isCancelled = ordered && String(ordered.status_key || '').toLowerCase() === 'cancelled';
+            const statusText = ordered
+                ? (ordered.status_key === 'pending' ? `আজ অর্ডার নেওয়া হয়েছে · ${formatMoney2(ordered.sr_total)}` : bnStatus(ordered.status_key || ordered.status))
+                : (Number(r.due || 0) > 0 ? `যাওয়া বাকি · আগের বাকি ${formatMoney2(r.due)}` : 'যাওয়া বাকি');
+            const num = ordered ? (isCancelled ? '✕' : '✓') : bnNum(idx + 1);
+            const action = ordered
+                ? `<span class="nr-act is-ghost">${ordered.editable === false ? 'দেখুন' : 'এডিট'}</span>`
+                : '<span class="nr-act">অর্ডার</span>';
             return `
-                <button type="button" class="quick-retailer-card ${statusCls} ${focused ? 'is-focused' : ''}" data-focus-retailer="${escapeHtml(r.id)}">
-                    <div class="qrc-top">
+                <button type="button" class="quick-retailer-card nr-row ${statusCls} ${focused ? 'is-focused' : ''}" data-focus-retailer="${escapeHtml(r.id)}">
+                    <span class="nr-num">${num}</span>
+                    <span class="nr-main">
                         <span class="qrc-name">${escapeHtml(r.name)}</span>
-                        ${statusBadge}
-                    </div>
-                    <div class="qrc-addr tabular">${subText} · ${escapeHtml(formatDistance(r.distance))}</div>
-                    <div class="qrc-bottom">
-                        <span class="muted">${bottomLeft}</span>
-                        <strong class="tabular">${bottomRight}</strong>
-                    </div>
+                        <span class="qrc-addr tabular">${escapeHtml(formatDistance(r.distance))} · ${escapeHtml(statusText)}</span>
+                    </span>
+                    ${action}
                 </button>
             `;
         }
@@ -1273,7 +1272,7 @@
         function createRetailerDivIcon(name, isDone, isFocused) {
             return window.L.divIcon({
                 className: 'retailer-pin-icon',
-                html: `<div class="retailer-pin-wrap ${isFocused ? 'is-focused' : ''}"><span class="retailer-pin-label"><span class="pin-status-dot ${isDone ? 'is-done' : ''}"></span><span>${escapeHtml(name)}</span></span><span class="retailer-pin-dot ${isDone ? 'is-done' : ''}"></span></div>`,
+                html: `<div class="retailer-pin-wrap ${isFocused ? 'is-focused' : ''} ${isDone ? 'is-done' : ''}"><span class="retailer-pin-label"><span class="pin-status-dot ${isDone ? 'is-done' : ''}">${isDone ? '✓' : ''}</span><span>${escapeHtml(name)}</span></span><span class="retailer-pin-stem"></span><span class="retailer-pin-dot ${isDone ? 'is-done' : ''}"></span></div>`,
                 iconSize: [0, 0],
                 iconAnchor: [0, 0],
             });
@@ -1770,9 +1769,15 @@
             const subtotal = entries.reduce((sum, it) => sum + Number(it.total || 0), 0);
 
             if (rpCartTotal) rpCartTotal.textContent = formatMoney2(subtotal);
+            const pcsTotal = entries.reduce((sum, it) => sum + Number(itemPcs(it) || 0), 0);
             if (cartFloatBadge) {
-                cartFloatBadge.hidden = entries.length === 0;
-                cartFloatBadge.textContent = `${bnNum(entries.length)}টি পণ্য`;
+                cartFloatBadge.hidden = false;
+                cartFloatBadge.textContent = entries.length ? `${bnNum(pcsTotal)} পিস · ${bnNum(entries.length)}টি পণ্য` : 'কোনো পণ্য নেই';
+            }
+            const cartCountEl = document.getElementById('rpCartCount');
+            if (cartCountEl) {
+                cartCountEl.hidden = entries.length === 0;
+                cartCountEl.textContent = bnNum(entries.length);
             }
             if (openCartReviewBtn) {
                 openCartReviewBtn.disabled = entries.length === 0;
@@ -1848,6 +1853,28 @@
             }
         }
 
+        let activeCategory = 'all';
+        function renderCategoryRail() {
+            const rail = document.getElementById('rpCatRail');
+            if (!rail) return;
+            const cats = Array.from(new Set(catalogProducts.map((p) => p.category || 'অন্যান্য')));
+            rail.hidden = cats.length < 2;
+            if (rail.hidden) { activeCategory = 'all'; return; }
+            if (activeCategory !== 'all' && !cats.includes(activeCategory)) activeCategory = 'all';
+            rail.innerHTML = ['all', ...cats].map((c) => {
+                const label = c === 'all' ? 'সব' : c;
+                const on = c === activeCategory;
+                const icon = c === 'all' ? 'সব' : (Array.from(label)[0] || '•');
+                return `<button type="button" class="rp-cat ${on ? 'is-on' : ''}" role="tab" aria-selected="${on ? 'true' : 'false'}" data-rp-cat="${escapeHtml(c)}"><span class="rp-cat-ic">${escapeHtml(icon)}</span><span class="rp-cat-t">${escapeHtml(label)}</span></button>`;
+            }).join('');
+        }
+        document.getElementById('rpCatRail')?.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-rp-cat]');
+            if (!b) return;
+            activeCategory = b.getAttribute('data-rp-cat');
+            renderRetailerProductsGrid();
+        });
+
         function renderRetailerProductsGrid() {
             if (!srProductsGrid) return;
             const cart = getActiveCart();
@@ -1861,12 +1888,14 @@
                     .sort((a, b) => (Math.floor(b.s / 10) - Math.floor(a.s / 10)) || (Number(b.p.id) - Number(a.p.id)))
                     .map((x) => x.p)
                 : catalogProducts;
-            if (list.length === 0) {
+            renderCategoryRail();
+            const catList = activeCategory === 'all' ? list : list.filter((p) => (p.category || 'অন্যান্য') === activeCategory);
+            if (catList.length === 0) {
                 srProductsGrid.innerHTML = `<div class="empty-state" style="grid-column:span 2;padding:24px 12px"><p class="muted small" style="margin:0">কোনো পণ্য পাওয়া যায়নি।</p></div>`;
                 return;
             }
 
-            srProductsGrid.innerHTML = list.map((p) => {
+            srProductsGrid.innerHTML = catList.map((p) => {
                 const inCart = cart.get(p.id);
                 const pcRate = baseRateFor(p, 'pcs');
                 const unitBn = bnUnit(p.unit_type);
@@ -1887,16 +1916,17 @@
 
                 return `
                     <button type="button" class="sr-prod-card ${inCart ? 'is-in-cart' : ''}" data-pick-product="${escapeHtml(p.id)}">
-                        <div class="sr-prod-img-wrap" style="background:${escapeHtml(p.tint || '#f8fafc')}">
+                        <div class="sr-prod-img-wrap">
+                            <span class="sr-prod-shadow" aria-hidden="true"></span>
                             <img src="${prodImg(p)}" alt="${escapeHtml(p.name)}">
                             ${inCart ? `<span class="sr-prod-badge">${escapeHtml(badgeText)}</span>` : ''}
                         </div>
                         <div class="sr-prod-info">
                             <div class="sr-prod-name">${escapeHtml(p.name)}</div>
-                            <span class="muted small tabular">${bnNum(p.qty_per_unit)} পিস / ${escapeHtml(unitBn)} · <span class="${p.available_pcs > 0 ? '' : 'is-danger'}">স্টক ${bnNum(Math.max(0, p.available_pcs))}</span></span>
+                            <span class="sr-prod-pack tabular">${bnNum(p.qty_per_unit)} পিস / ${escapeHtml(unitBn)} · ${formatMoney2(pcRate)} /পিস</span>
                             <div class="sr-prod-rates">
-                                <strong class="tabular">${formatMoney2(p.unit_price)} <span class="muted small">/${escapeHtml(unitBn)}</span></strong>
-                                <span class="muted small tabular">${formatMoney2(pcRate)} /পিস</span>
+                                <strong class="tabular">${formatMoney2(p.unit_price)}</strong>
+                                <span class="sr-stock ${p.available_pcs > 0 ? '' : 'is-out'} tabular"><i></i>স্টক ${bnNum(Math.max(0, p.available_pcs))}</span>
                             </div>
                         </div>
                     </button>
@@ -1930,7 +1960,8 @@
 
             const dist = haversineMeters(srLoc.lat, srLoc.lng, Number(ret.lat), Number(ret.lng));
             if (rpRetailerName) rpRetailerName.textContent = ret.name;
-            if (rpRetailerSub) rpRetailerSub.textContent = `${ret.address || ret.phone || 'অবস্থান পিনকৃত'} · ${formatDistance(dist)}`;
+            if (rpRetailerSub) rpRetailerSub.textContent = `${activeOrderId ? 'অর্ডার এডিট' : 'নতুন অর্ডার'} · ${formatDistance(dist)}`;
+            activeCategory = 'all';
             if (rpProductSearch) rpProductSearch.value = '';
             if (rpProductSearchClear) rpProductSearchClear.hidden = true;
             if (rpProductSearchSpinner) rpProductSearchSpinner.hidden = true;
@@ -2316,26 +2347,24 @@
             if (osItemsBody) {
                 osItemsBody.innerHTML = snapshot.items.map((it) => {
                     const ocVal = round2(it.oc || 0);
-                    let ocTagHtml = '';
-                    if (Math.abs(ocVal) >= 0.01) {
-                        const cls = ocVal > 0 ? 'is-over' : 'is-comm';
-                        const sign = ocVal > 0 ? '+' : '−';
-                        ocTagHtml = `<span class="cart-oc-tag os-item-oc ${cls}">${sign}${bnDigits(Math.abs(ocVal))} O/C</span>`;
-                    }
+                    const ocTagHtml = Math.abs(ocVal) >= 0.01
+                        ? `<span class="li-oc ${ocVal > 0 ? 'is-over' : 'is-comm'}">${ocVal > 0 ? '+' : '−'}${formatMoney2(Math.abs(ocVal))}</span>`
+                        : '';
                     return `
-                        <tr>
-                            <td>
-                                <span class="os-item-name">${escapeHtml(it.name)}</span>
-                                <span class="os-item-sub tabular">@ ${formatMoney2(it.rate)}</span>
-                                ${ocTagHtml}
-                            </td>
-                            <td class="text-center">
-                                <span class="cart-qty-pill tabular">${escapeHtml(formatCartQtyPill(it))}</span>
-                            </td>
-                            <td class="text-right tabular nowrap"><strong>${formatMoney2(it.total)}</strong></td>
-                        </tr>
+                        <div class="li-row">
+                            <span class="li-av">${escapeHtml(Array.from(String(it.name || '•'))[0])}</span>
+                            <span class="li-main"><b>${escapeHtml(it.name)}</b><span class="tabular">${escapeHtml(formatCartQtyPill(it))} × ${formatMoney2(it.rate)}${ocTagHtml}</span></span>
+                            <strong class="tabular">${formatMoney2(it.total)}</strong>
+                        </div>
                     `;
                 }).join('');
+                const over = round2(snapshot.items.reduce((acc, it) => acc + Math.max(0, Number(it.oc || 0)), 0));
+                const comm = round2(snapshot.items.reduce((acc, it) => acc + Math.min(0, Number(it.oc || 0)), 0));
+                const net = round2(over + comm);
+                const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+                setText('osOver', `+${formatMoney2(over)}`);
+                setText('osComm', `−${formatMoney2(Math.abs(comm))}`);
+                setText('osNet', `${net < 0 ? '−' : (net > 0 ? '+' : '')}${formatMoney2(Math.abs(net))}`);
             }
             if (osTotalCost) {
                 osTotalCost.textContent = formatMoney2(snapshot.total);
@@ -2949,6 +2978,11 @@
             if (countEl) countEl.textContent = bnNum(orders.length);
             if (dayTotalEl) dayTotalEl.textContent = money(active.reduce((s, o) => s + o.sr_total, 0));
             if (dayOcEl) dayOcEl.textContent = signed(active.reduce((s, o) => s + o.oc, 0));
+            const subEl = document.getElementById('historySubSummary');
+            if (subEl) {
+                const shops = new Set(orders.map((o) => o.retailer)).size;
+                subEl.textContent = orders.length ? `${bnNum(shops)}টি দোকানে অর্ডার` : 'এই দিনে কোনো অর্ডার নেই';
+            }
 
             if (!listEl || !emptyEl) return;
             emptyEl.hidden = orders.length > 0;
@@ -2958,49 +2992,34 @@
                 const isDone = st === 'delivered';
                 const isPartial = st === 'partial' || st === 'due';
                 const isTrip = !!o.trip || st === 'assigned' || st === 'dispatched';
+                const items = Array.isArray(o.items) ? o.items : [];
+                const over = items.reduce((acc, it) => acc + Math.max(0, Number(it.oc || 0)), 0);
+                const comm = items.reduce((acc, it) => acc + Math.min(0, Number(it.oc || 0)), 0);
 
-                const icoCls = isCancelled ? 'is-danger' : (isPartial ? 'is-warn' : (isDone || isTrip ? 'is-ok' : 'is-info'));
-                const icoSvg = isCancelled
-                    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>'
-                    : (isPartial
-                        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
-                        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="20 6 9 17 4 12"/></svg>');
-
-                let subStatus = bnStatus(st || o.status);
-                if (isDone) subStatus = 'পুরো নিয়েছে';
-                else if (isCancelled) subStatus = 'পুরো ফেরত এসেছে';
-                else if (st === 'partial') subStatus = `কম নিয়েছে${o.due > 0 ? ` · বাকি ${money(o.due)}` : ''}`;
-                else if (st === 'due') subStatus = `বকেয়ায় ডেলিভারি · বাকি ${money(o.due)}`;
-                else if (isTrip) subStatus = 'ডেলিভারির পথে';
-                else subStatus = 'অর্ডার নেওয়া হয়েছে';
-
-                let alertStrip = '';
-                if (isCancelled && o.cancel_reason) {
-                    alertStrip = `<div class="history-alert-strip is-danger">দোকানের কারণ: "${escapeHtml(o.cancel_reason)}"</div>`;
-                } else if (isPartial && (o.due > 0 || o.damage > 0)) {
-                    const msg = o.damage > 0 ? `ক্ষতি ${money(o.damage)}` : `বকেয়া ${money(o.due)}`;
-                    alertStrip = `<div class="history-alert-strip is-warn">ডেলিভারি: ${money(o.delivered_total)} · ${msg}</div>`;
-                }
+                let stText = 'ডেলিভারি বাকি';
+                let stCls = 'is-blue';
+                if (isDone) { stText = 'পুরো নিয়েছে'; stCls = 'is-blue'; }
+                else if (isCancelled) { stText = 'ফেরত এসেছে'; stCls = 'is-red'; }
+                else if (st === 'partial') { stText = o.due > 0 ? `কম নিয়েছে · বাকি ${money(o.due)}` : 'কম নিয়েছে'; stCls = 'is-red'; }
+                else if (st === 'due') { stText = `বাকি ${money(o.due)}`; stCls = 'is-red'; }
+                else if (isTrip) { stText = 'ডেলিভারির পথে'; }
+                const ocText = `ওভার <b class="is-blue">+${money(over)}</b> · কমিশন <b class="${comm < 0 ? 'is-red' : ''}">−${money(Math.abs(comm))}</b>`;
+                const extra = isCancelled && o.cancel_reason
+                    ? `<span class="hr-alert">দোকানের কারণ: "${escapeHtml(o.cancel_reason)}"</span>`
+                    : '';
 
                 return `
-                    <button type="button" class="history-card ${isCancelled ? 'is-cancelled' : ''}" data-order-idx="${idx}">
-                        <div class="history-card-top">
-                            <div class="history-card-left">
-                                <span class="history-status-ico ${icoCls}" aria-hidden="true">${icoSvg}</span>
-                                <div class="history-row-main">
-                                    <div class="history-retailer">${escapeHtml(o.retailer)}</div>
-                                    <div class="history-meta tabular">${escapeHtml(subStatus)}</div>
-                                </div>
-                            </div>
-                            <div class="history-row-right">
-                                <div class="history-card-price-row">
-                                    <span class="history-amount tabular">${money(o.sr_total)}</span>
-                                    <span class="history-chev" aria-hidden="true">›</span>
-                                </div>
-                            </div>
-                        </div>
-                        ${buildTimelineHtml(o)}
-                        ${alertStrip}
+                    <button type="button" class="hr-row ${isCancelled ? 'is-cancelled' : ''}" data-order-idx="${idx}">
+                        <span class="hr-av">${escapeHtml(Array.from(String(o.retailer || '•'))[0])}</span>
+                        <span class="hr-main">
+                            <b>${escapeHtml(o.retailer)}</b>
+                            <span class="tabular">মেমো #${escapeHtml(bnDigits(o.code))} · ${ocText}</span>
+                            ${extra}
+                        </span>
+                        <span class="hr-right">
+                            <b class="tabular">${money(o.sr_total)}</b>
+                            <span class="${stCls}">${escapeHtml(stText)}</span>
+                        </span>
                     </button>`;
             }).join('');
         }
@@ -3113,31 +3132,19 @@
             if (itemsCardsEl) {
                 itemsCardsEl.innerHTML = order.items.map((it) => {
                     const ocVal = Math.round((Number(it.oc || 0) + Number.EPSILON) * 100) / 100;
-                    let ocBadge = '';
-                    if (Math.abs(ocVal) >= 0.01) {
-                        ocBadge = ocVal > 0
-                            ? `<span class="om-oc-chip is-over">ওভার +${money(ocVal)}</span>`
-                            : `<span class="om-oc-chip is-comm">কমিশন −${money(Math.abs(ocVal))}</span>`;
-                    }
+                    const ocTag = Math.abs(ocVal) >= 0.01
+                        ? `<span class="li-oc ${ocVal > 0 ? 'is-over' : 'is-comm'}">${ocVal > 0 ? '+' : '−'}${money(Math.abs(ocVal))}</span>`
+                        : '';
                     const thumb = it.image
-                        ? `<img src="${escapeHtml(it.image)}" alt="${escapeHtml(it.name)}">`
-                        : escapeHtml(it.code || 'PR');
-                    const unitRate = money(Number(it.sr_rate_pc || 0) * Number(it.qty_per_unit || 1));
+                        ? `<img src="${escapeHtml(it.image)}" alt="">`
+                        : escapeHtml(Array.from(String(it.name || '•'))[0]);
                     return `
-                        <div class="om-item-card">
-                            <div class="om-item-left">
-                                <span class="om-item-thumb" style="background:${escapeHtml(it.tint || '#f8fafc')}">${thumb}</span>
-                                <div class="om-item-main">
-                                    <div class="om-item-title">${escapeHtml(it.name)}</div>
-                                    <div class="om-item-sub-row">
-                                        <span class="om-item-sub tabular">${bnNum(it.pcs)} পিস × ${money(it.sr_rate_pc)} (ইউনিট ${unitRate})</span>
-                                        ${ocBadge}
-                                    </div>
-                                </div>
-                            </div>
-                            <strong class="om-item-amt tabular">${money(it.total)}</strong>
+                        <div class="li-row">
+                            <span class="li-av">${thumb}</span>
+                            <span class="li-main"><b>${escapeHtml(it.name)}</b><span class="tabular">${bnNum(it.pcs)} পিস × ${money(it.sr_rate_pc)}${ocTag}</span></span>
+                            <strong class="tabular">${money(it.total)}</strong>
                         </div>`;
-                }).join('');
+                }).join('') + `<div class="li-total"><span>মোট অর্ডার</span><strong class="tabular">${money(order.sr_total)}</strong></div>`;
             }
 
             const deliveryStr = order.trip
@@ -3149,13 +3156,22 @@
 
             const summaryEl = document.getElementById('omDetailSummaryCard');
             if (summaryEl) {
+                const oItems = Array.isArray(order.items) ? order.items : [];
+                const oOver = oItems.reduce((acc, it) => acc + Math.max(0, Number(it.oc || 0)), 0);
+                const oComm = oItems.reduce((acc, it) => acc + Math.min(0, Number(it.oc || 0)), 0);
                 summaryEl.innerHTML = `
-                    <div class="om-sum-row is-head"><span>মোট অর্ডার</span><strong class="tabular">${money(order.sr_total)}</strong></div>
-                    <div class="om-sum-row"><span class="muted">বেজ (ডিলার) মূল্য</span><span class="tabular">${money(order.base_total)}</span></div>
-                    <div class="om-sum-row"><span class="muted">নিট O/C</span><strong class="tabular ${order.oc > 0 ? 'is-ok' : (order.oc < 0 ? 'is-danger' : '')}">${signed(order.oc)}</strong></div>
-                    <div class="om-sum-row"><span class="muted">ডেলিভারি</span><strong>${escapeHtml(deliveryStr)}</strong></div>
-                    <div class="om-sum-row"><span class="muted">টাকা নেওয়া</span><strong>${escapeHtml(payStr)}</strong></div>
-                    ${order.cancel_reason ? `<div class="history-alert-strip is-danger">বাতিল কারণ: ${escapeHtml(order.cancel_reason)}</div>` : ''}`;
+                    <span class="mine-k">আমার হিসাব · শুধু আপনি দেখবেন</span>
+                    <div class="mine-strip">
+                        <div><span>ওভার</span><b class="is-over">+${money(oOver)}</b></div>
+                        <div><span>কমিশন</span><b class="is-comm">−${money(Math.abs(oComm))}</b></div>
+                        <div><span>নিট</span><b>${signed(order.oc)}</b></div>
+                    </div>
+                    <div class="mine-facts">
+                        <div><span>ডেলিভারি</span><b>${escapeHtml(deliveryStr)}</b></div>
+                        <div><span>টাকা নেওয়া</span><b>${escapeHtml(payStr)}</b></div>
+                        <div><span>বেজ (ডিলার) মূল্য</span><b class="tabular">${money(order.base_total)}</b></div>
+                    </div>
+                    ${order.cancel_reason ? `<div class="hr-alert">বাতিল কারণ: ${escapeHtml(order.cancel_reason)}</div>` : ''}`;
             }
 
             // Tab 2: Formal Distributor Shop Copy Memo (no internal O/C)
@@ -3164,52 +3180,23 @@
             const areaName = app.dataset.srArea || '';
             const shopMemoEl = document.getElementById('omShopMemoSheet');
             if (shopMemoEl) {
+                const partnerInitial = Array.from(String(partnerName || 'H'))[0];
                 shopMemoEl.innerHTML = `
-                    <div class="shop-memo-top">
-                        <h3>${escapeHtml(partnerName)}</h3>
-                        <p>${escapeHtml(areaName)}${areaName ? ' · ' : ''}${escapeHtml(order.company)}</p>
-                        <span class="shop-memo-pill">আসল মেমো</span>
+                    <div class="sm-head">
+                        <span class="sm-logo">${escapeHtml(partnerInitial)}</span>
+                        <span class="sm-brand"><b>${escapeHtml(partnerName)}</b><span>${escapeHtml(areaName)}${areaName ? ' · ' : ''}${escapeHtml(order.company)}</span></span>
+                        <span class="sm-tag">ক্যাশ মেমো<br>#${escapeHtml(bnDigits(order.code))}</span>
                     </div>
-                    <div class="shop-memo-meta-grid">
-                        <div class="shop-memo-meta-col">
-                            <span>দোকান: <strong>${escapeHtml(order.retailer)}</strong></span>
-                            <span class="muted">${escapeHtml(order.retailer_address || '—')}${order.retailer_phone ? ` · ${escapeHtml(bnDigits(order.retailer_phone))}` : ''}</span>
-                            <span class="muted">SR: ${escapeHtml(srName)}</span>
-                        </div>
-                        <div class="shop-memo-meta-col text-right">
-                            <span class="tabular">মেমো: <strong>${escapeHtml(bnDigits(order.code))}</strong></span>
-                            <span class="muted tabular">${escapeHtml(formatHumanDate(order.date))} · ${escapeHtml(bnDigits(order.time))}</span>
-                            <span class="muted">${escapeHtml(order.company)}</span>
-                        </div>
+                    <div class="sm-shop"><span><b>${escapeHtml(order.retailer)}</b>${order.retailer_address ? `<br>${escapeHtml(order.retailer_address)}` : ''}</span><span class="tabular">${escapeHtml(formatHumanDate(order.date))}</span></div>
+                    <div class="sm-items">
+                        ${order.items.map((it) => `
+                            <div class="sm-item"><span><b>${escapeHtml(it.name)}</b><span class="tabular">${bnNum(it.pcs)} পিস × ${money(it.sr_rate_pc)}</span></span><strong class="tabular">${money(it.total)}</strong></div>`).join('')}
                     </div>
-                    <table class="shop-memo-table">
-                        <thead>
-                            <tr>
-                                <th>পণ্য</th>
-                                <th class="text-center">পরিমাণ</th>
-                                <th class="text-right">দর</th>
-                                <th class="text-right">টাকা</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${order.items.map((it) => `
-                                <tr>
-                                    <td>${escapeHtml(it.name)}</td>
-                                    <td class="text-center tabular">${bnNum(it.pcs)} পিস</td>
-                                    <td class="text-right tabular">${money(it.sr_rate_pc)}</td>
-                                    <td class="text-right tabular">${money(it.total)}</td>
-                                </tr>`).join('')}
-                        </tbody>
-                    </table>
-                    <div class="shop-memo-total-row">
-                        <span>মোট</span>
-                        <span class="tabular">${money(order.sr_total)}</span>
-                    </div>
-                    <div class="shop-memo-note">${escapeHtml(payStr)}${order.trip ? ` · ট্রিপ ${escapeHtml(bnDigits(order.trip))}` : ''}</div>
-                    <div class="shop-memo-sigs">
-                        <div class="shop-memo-sig">দোকানদার</div>
-                        <div class="shop-memo-sig">এসআর (${escapeHtml(srName)})</div>
-                    </div>`;
+                    <div class="sm-total"><span>মোট</span><strong class="tabular">${money(order.sr_total)}</strong></div>
+                    <span class="sm-note">${escapeHtml(payStr)}${order.trip ? ` · ট্রিপ ${escapeHtml(bnDigits(order.trip))}` : ''}</span>
+                    <div class="sm-sigs"><span>দোকানদার</span><span>SR · ${escapeHtml(srName)}</span></div>
+                    <span class="sm-thanks">ধন্যবাদ · Happy Bangladesh</span>
+                    <span class="sm-zigzag" aria-hidden="true"></span>`;
             }
 
             openModal('orderDetailModal');

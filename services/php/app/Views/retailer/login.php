@@ -6,6 +6,8 @@
     <?= csrf_meta() ?>
     <title>দোকান লগইন — Happy</title>
     <link rel="icon" type="image/jpeg" href="<?= e(asset('images/logo.jpg')) ?>">
+    <meta name="theme-color" content="#1A3FD6">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;600;700;800&display=swap">
     <link rel="stylesheet" href="<?= e(asset('retailer/css/retailer.css')) ?>">
 </head>
 <body>

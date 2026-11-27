@@ -10,21 +10,15 @@ import '../core/format.dart';
 import '../core/offline.dart';
 import '../core/realtime.dart';
 import '../core/tracker.dart';
+import '../ui/base_map.dart';
 import '../ui/common.dart';
 import '../ui/dkit.dart';
+import '../ui/hkit.dart';
 import '../ui/pwa_kit.dart';
 import 'ready_sale_page.dart';
 import 'stop_page.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
-
-Color statusColor(String s) => switch (s) {
-      'Delivered' => DC.okText,
-      'Due' => DC.dangerText,
-      'Partial' => DC.warnText,
-      'Cancelled' => DC.muted,
-      _ => DC.infoText,
-    };
 
 String statusBn(String s) => switch (s) {
       'Delivered' => 'ডেলিভারি হয়েছে',
@@ -35,15 +29,61 @@ String statusBn(String s) => switch (s) {
       _ => s,
     };
 
-const _grayscale = ColorFilter.matrix(<double>[
-  0.2126, 0.7152, 0.0722, 0, 0, //
-  0.2126, 0.7152, 0.0722, 0, 0,
-  0.2126, 0.7152, 0.0722, 0, 0,
-  0, 0, 0, 1, 0,
-]);
+/// What the shop should pay for the pieces that will be delivered (ordered, capped by van stock, minus cancelled ones).
+double stopBill(Map<String, dynamic> s) {
+  var t = 0.0;
+  for (final c in (s['companies'] as List? ?? [])) {
+    final co = _m(c);
+    if (co['ready_sale'] == true || co['cancelled'] == true) continue;
+    for (final i in (co['items'] as List? ?? [])) {
+      final it = _m(i);
+      final ordered = int0(it['ordered_qty']), stock = int0(it['stock']);
+      t += (ordered < stock ? ordered : stock) * num0(it['sr_rate']);
+    }
+  }
+  return t;
+}
 
-/// DSR "ডেলিভারি" tab — the PWA's full-screen delivery map: floating date nav + রেডি সেল, shop pins,
-/// bottom dock of status-coloured order cards. Tapping a card opens that shop's delivery.
+/// Cash taken at a finished stop (bill part + old due collected).
+double stopCash(Map s) => s['status'] == 'Pending' ? 0 : num0(s['paid_amount']) + num0(s['old_due_collected']);
+
+int stopItems(Map s) {
+  var n = 0;
+  for (final c in (s['companies'] as List? ?? [])) {
+    if (_m(c)['ready_sale'] == true) continue;
+    n += ((_m(c)['items'] as List?) ?? const []).length;
+  }
+  return n;
+}
+
+String stopMemo(Map s) {
+  for (final c in (s['companies'] as List? ?? [])) {
+    final co = _m(c);
+    if (co['ready_sale'] != true && '${co['order_code'] ?? ''}'.isNotEmpty) return '${co['order_code']}';
+  }
+  return '';
+}
+
+/// Opens one shop's delivery (DMD) for the loaded `/dsr/delivery` payload [d]; true when something was saved.
+Future<bool?> openStop(BuildContext context, Map<String, dynamic> s, Map<String, dynamic> d) {
+  final trip = d['trip'] == null ? null : _m(d['trip']);
+  return Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => StopPage(
+        stop: s,
+        reasons: ((d['cancelReasons'] as List?) ?? const []).map((e) => '$e').toList(),
+        editable: trip != null && trip['editable'] == true,
+        damageProducts: ((d['damageProducts'] as List?) ?? const []).map(_m).toList(),
+      )));
+}
+
+/// Stop marker / list number: ✓ delivered, ! short or due, ✕ cancelled, else the route number.
+({String text, Color bg, Color fg}) stopDot(Map s, int number) => switch ('${s['status']}') {
+      'Delivered' => (text: '✓', bg: HC.blue, fg: Colors.white),
+      'Due' || 'Partial' => (text: '!', bg: HC.red, fg: Colors.white),
+      'Cancelled' => (text: '×', bg: HC.chip, fg: HC.muted),
+      _ => (text: bn(number), bg: HC.ink, fg: Colors.white),
+    };
+
+/// DM2 — today's shops: sky header (done / cash), route map with numbered pins, the route list.
 class DeliveryPage extends StatefulWidget {
   const DeliveryPage({super.key});
   @override
@@ -67,10 +107,12 @@ class _DeliveryPageState extends State<DeliveryPage> {
     _sync = OfflineQueue.instance.onSynced.listen((_) => _load(silent: true));
     _live = Realtime.instance.events.listen((_) => _load(silent: true));
     Tracker.currentOnce().then((p) {
-      if (p != null && mounted) setState(() {
-        _lat = p.latitude;
-        _lng = p.longitude;
-      });
+      if (p != null && mounted) {
+        setState(() {
+          _lat = p.latitude;
+          _lng = p.longitude;
+        });
+      }
     });
   }
 
@@ -112,23 +154,6 @@ class _DeliveryPageState extends State<DeliveryPage> {
     return 12742000 * asin(sqrt(a));
   }
 
-  String _distText(double? m) => m == null ? 'দূরত্ব অজানা' : (m < 1000 ? '${bn(m.round())} মি' : '${bn((m / 1000).toStringAsFixed(1))} কিমি');
-
-  /// What the shop should pay for the pieces that will be delivered (ordered, capped by van stock, minus cancelled ones).
-  double _shouldPay(Map<String, dynamic> s) {
-    var t = 0.0;
-    for (final c in (s['companies'] as List? ?? [])) {
-      final co = _m(c);
-      if (co['ready_sale'] == true || co['cancelled'] == true) continue;
-      for (final i in (co['items'] as List? ?? [])) {
-        final it = _m(i);
-        final ordered = int0(it['ordered_qty']), stock = int0(it['stock']);
-        t += (ordered < stock ? ordered : stock) * num0(it['sr_rate']);
-      }
-    }
-    return t;
-  }
-
   void _fitAll(List<Map<String, dynamic>> stops) {
     final pts = [for (final s in stops) if (num0(s['lat']) != 0) LatLng(num0(s['lat']), num0(s['lng']))];
     if (_lat != null) pts.add(LatLng(_lat!, _lng!));
@@ -137,9 +162,14 @@ class _DeliveryPageState extends State<DeliveryPage> {
       if (pts.length == 1) {
         _map.move(pts.first, 17);
       } else {
-        _map.fitCamera(CameraFit.bounds(bounds: LatLngBounds.fromPoints(pts), padding: const EdgeInsets.fromLTRB(28, 68, 28, 190), maxZoom: 18));
+        _map.fitCamera(CameraFit.bounds(bounds: LatLngBounds.fromPoints(pts), padding: const EdgeInsets.all(36), maxZoom: 18));
       }
     } catch (_) {/* map not ready */}
+  }
+
+  Future<void> _open(Map<String, dynamic> s) async {
+    final v = await openStop(context, s, _data!);
+    if (v == true) _load(silent: true);
   }
 
   @override
@@ -149,31 +179,23 @@ class _DeliveryPageState extends State<DeliveryPage> {
     if (_data == null) {
       return ListView(padding: const EdgeInsets.all(20), children: [
         const SizedBox(height: 80),
-        const Icon(Icons.cloud_off, size: 56, color: DC.muted),
-        const SizedBox(height: 12),
-        Text(_error is ApiException ? (_error as ApiException).message : 'লোড করা যায়নি।', textAlign: TextAlign.center, style: ts(14)),
-        const SizedBox(height: 16),
-        Center(child: DBtn('আবার চেষ্টা', kind: DBtnKind.secondary, onTap: _load)),
+        const Icon(Icons.cloud_off_rounded, size: 56, color: HC.faint),
+        gap12,
+        Text(_error is ApiException ? (_error as ApiException).message : 'লোড করা যায়নি।', textAlign: TextAlign.center, style: hs(14)),
+        gap16,
+        Center(child: HBtn('আবার চেষ্টা', kind: HBtnKind.line, expand: false, onTap: _load)),
       ]);
     }
     final d = _data!;
     final trip = d['trip'] == null ? null : _m(d['trip']);
     final date = d['selectedDate'].toString();
-    final stops = (d['orders'] as List).map(_m).toList();
-    final vanStock = (d['vanStock'] as List).map(_m).toList();
-    final reasons = (d['cancelReasons'] as List).map((e) => '$e').toList();
-    final damageProducts = (d['damageProducts'] as List).map(_m).toList();
+    final stops = ((d['orders'] as List?) ?? const []).map(_m).toList();
+    final vanStock = ((d['vanStock'] as List?) ?? const []).map(_m).toList();
     final editable = trip != null && trip['editable'] == true;
-    for (final s in stops) {
-      s['_d'] = _dist(s);
-    }
-    stops.sort((a, b) {
-      int rank(Map s) => s['status'] == 'Pending' ? 0 : 1;
-      final r = rank(a).compareTo(rank(b));
-      if (r != 0) return r;
-      return ((a['_d'] as double?) ?? 9e12).compareTo((b['_d'] as double?) ?? 9e12);
-    });
-    final pending = stops.where((s) => s['status'] == 'Pending').length;
+    final done = stops.where((s) => s['status'] != 'Pending').length;
+    final pending = stops.length - done;
+    final cash = stops.fold<double>(0, (a, s) => a + stopCash(s));
+    final bill = stops.fold<double>(0, (a, s) => a + (s['status'] == 'Pending' ? stopBill(s) : num0(s['paid_amount']) + num0(s['due_amount'])));
 
     String? banner;
     var returned = false;
@@ -190,159 +212,158 @@ class _DeliveryPageState extends State<DeliveryPage> {
       listenable: OfflineQueue.instance,
       builder: (context, _) {
         final pend = _pendingStops;
-        return Stack(children: [
-          Positioned.fill(child: _buildMap(stops)),
-          Positioned(
-            top: top + 10, left: 10, right: 10,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(children: [
-                Expanded(
-                  child: DDateNav(date: date, subText: trip != null ? bn('${trip['code']}') : 'ট্রিপ নেই', onChange: (v) {
+        return RefreshIndicator(
+          edgeOffset: top,
+          onRefresh: () => _load(silent: true),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(18, top + 14, 18, 24),
+            children: [
+              SkyBox(
+                height: 200,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  SkyHead(
+                    kicker: trip == null ? 'ট্রিপ নেই' : 'ট্রিপ ${bn('${trip['code']}')}',
+                    title: 'আজকের দোকান',
+                    trailing: GlassBtn(
+                      icon: Ic.plus, label: 'রেডি সেল',
+                      onTap: editable ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReadySalePage(vanStock: vanStock))).then((v) => v == true ? _load(silent: true) : null) : () => toast(context, 'খোলা ট্রিপ ছাড়া রেডি সেল করা যাবে না।', error: true),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('${bn(done)}/${bn(stops.length)} · নগদ ${tk(cash)}', style: hs(13, color: HC.onSky, num: true)),
+                  const SizedBox(height: 12),
+                  SkyDateBar(date: date, onChange: (v) {
                     setState(() => _date = v == todayYmd() ? null : v);
                     _load();
                   }),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  decoration: const BoxDecoration(boxShadow: [BoxShadow(color: Color(0x240F172A), blurRadius: 12, offset: Offset(0, 4))]),
-                  child: DBtn('রেডি সেল', small: true, height: 38, icon: const Svg(Ic.plus, size: 14, color: Colors.white, stroke: 2.2),
-                      onTap: editable ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReadySalePage(vanStock: vanStock))).then((v) => v == true ? _load(silent: true) : null) : null),
-                ),
-              ]),
-              if (banner != null) Padding(padding: const EdgeInsets.only(top: 8), child: DBanner(banner, returned: returned, muted: trip == null)),
-              if (_stale) const Padding(padding: EdgeInsets.only(top: 8), child: OfflineBanner()),
-            ]),
-          ),
-          Positioned(
-            right: 12, bottom: 184,
-            child: GestureDetector(
-              onTap: () => _fitAll(stops),
-              child: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(color: DC.surface, shape: BoxShape.circle, border: Border.all(color: DC.border), boxShadow: const [BoxShadow(color: Color(0x240F172A), blurRadius: 14, offset: Offset(0, 4))]),
-                child: const Center(child: Svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7" stroke-dasharray="2 2"/>', size: 18, color: DC.ink)),
+                ]),
               ),
-            ),
-          ),
-          Positioned(
-            left: 0, right: 0, bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(10, 18, 10, 10),
-              decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00F7F8FA), Color(0xF0F7F8FA), DC.surface], stops: [0, 0.18, 0.38])),
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Row(children: [Text('কাছাকাছি অর্ডার', style: ts(13, w: FontWeight.w700)), const SizedBox(width: 6), DBadge(bn(stops.length))]),
-                    Flexible(child: Text(trip == null ? '${dateBn(date)}-এ কোনো ট্রিপ নেই' : '${bn(stops.length)}টি স্টপের মধ্যে ${bn(pending)}টি বাকি', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.right, style: ts(12, color: DC.muted, tabular: true))),
+              if (banner != null) Padding(padding: const EdgeInsets.only(top: 12), child: DBanner(banner, returned: returned, muted: trip == null)),
+              if (_stale) const Padding(padding: EdgeInsets.only(top: 8), child: OfflineBanner()),
+              gap12,
+              if (stops.any((s) => num0(s['lat']) != 0) || _lat != null)
+                Container(
+                  height: 230,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), boxShadow: HC.liftSm),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(children: [
+                    Positioned.fill(child: _buildMap(stops)),
+                    Positioned(
+                      right: 10, top: 10,
+                      child: Semantics(button: true, label: 'সব দোকান দেখুন', child: GestureDetector(
+                        onTap: () => _fitAll(stops),
+                        child: Container(
+                          width: 40, height: 40,
+                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: HC.liftSm),
+                          child: const Center(child: Svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>', size: 18, color: HC.ink)),
+                        ),
+                      )),
+                    ),
+                    const Positioned(left: 0, right: 0, bottom: 4, child: MapCredit()),
                   ]),
                 ),
-                SizedBox(
-                  height: 108,
-                  child: stops.isEmpty
-                      ? Padding(padding: const EdgeInsets.all(6), child: Text(trip == null ? 'এই তারিখে কোনো ডিসপ্যাচ করা ট্রিপ নেই।' : 'এই ট্রিপে কোনো অর্ডার নেই।', style: ts(12, color: DC.muted)))
-                      : ListView.separated(
-                          scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(2, 2, 2, 4), itemCount: stops.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 9),
-                          itemBuilder: (_, i) => _card(stops[i], pend.contains('${stops[i]['id']}'), reasons, damageProducts, editable),
-                        ),
-                ),
-              ]),
-            ),
+              gap16,
+              HSec('রুটের দোকান', trailing: '${bn(pending)}টি বাকি · মোট ${tk(bill)}'),
+              gap8,
+              if (stops.isEmpty)
+                HEmpty(trip == null ? 'কোনো ট্রিপ নেই' : 'এই ট্রিপে কোনো অর্ডার নেই', body: 'পার্টনার ট্রিপ দিলে এখানে দোকানগুলো আসবে।')
+              else
+                HList(children: [
+                  for (var i = 0; i < stops.length; i++) _row(stops[i], i + 1, pend.contains('${stops[i]['id']}'), editable),
+                ]),
+            ],
           ),
-        ]);
+        );
       },
+    );
+  }
+
+  Widget _row(Map<String, dynamic> s, int number, bool queued, bool editable) {
+    final st = '${s['status']}';
+    final dot = stopDot(s, number);
+    final pending = st == 'Pending';
+    final note = '${s['cancel_reason'] ?? ''}';
+    final dist = _dist(s);
+    final sub = !pending && note.isNotEmpty
+        ? note
+        : [
+            if ('${s['address'] ?? ''}'.isNotEmpty) '${s['address']}',
+            if (dist != null) (dist < 1000 ? '${bn(dist.round())} মি' : '${bn((dist / 1000).toStringAsFixed(1))} কিমি'),
+            tk(pending ? stopBill(s) : stopCash(s)),
+          ].join(' · ');
+    final (chipText, chipBg, chipFg) = queued
+        ? ('সিঙ্ক বাকি', HC.chip, HC.ink2)
+        : switch (st) {
+            'Delivered' => ('✓ দেওয়া', HC.soft, HC.blue),
+            'Partial' => ('আংশিক', HC.redSoft, HC.red),
+            'Due' => ('বাকি ${tk(s['due_amount'])}', HC.redSoft, HC.red),
+            'Cancelled' => ('বাতিল', HC.chip, HC.muted),
+            _ => ('', HC.chip, HC.ink),
+          };
+    return InkWell(
+      onTap: () => _open(s),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        child: Row(children: [
+          NumDot(dot.text, bg: dot.bg, fg: dot.fg, size: 36),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${s['retailer_name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14.5, w: w6)),
+            Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.muted, num: true)),
+          ])),
+          const SizedBox(width: 8),
+          if (pending && !queued)
+            HBtn('দিন', expand: false, height: 36, radius: 12, fontSize: 13, onTap: editable ? () => _open(s) : null)
+          else
+            HChip(chipText, bg: chipBg, fg: chipFg, size: 11),
+        ]),
+      ),
     );
   }
 
   Widget _buildMap(List<Map<String, dynamic>> stops) {
     final first = stops.firstWhere((s) => num0(s['lat']) != 0, orElse: () => {});
-    final center = _lat != null ? LatLng(_lat!, _lng!) : (first.isNotEmpty ? LatLng(num0(first['lat']), num0(first['lng'])) : const LatLng(23.8645, 90.4005));
-    return Container(
-      color: const Color(0xFFE5E7EB),
+    final center = first.isNotEmpty ? LatLng(num0(first['lat']), num0(first['lng'])) : (_lat != null ? LatLng(_lat!, _lng!) : const LatLng(23.8645, 90.4005));
+    return ColoredBox(
+      color: const Color(0xFFE9EDF5),
       child: FlutterMap(
         mapController: _map,
         options: MapOptions(
-          initialCenter: center, initialZoom: 16, maxZoom: 21,
+          initialCenter: center, initialZoom: 15, maxZoom: 21,
           interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
           onMapReady: () => _fitAll(stops),
         ),
         children: [
-          if (kMapTiles)
-            ColorFiltered(
-              colorFilter: _grayscale,
-              child: TileLayer(urlTemplate: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', subdomains: const ['0', '1', '2', '3'], maxNativeZoom: 20, userAgentPackageName: 'bd.happybangladesh.app'),
-            ),
+          if (kMapTiles) const BaseMapLayer(),
+          if (stops.where((s) => num0(s['lat']) != 0).length > 1)
+            PolylineLayer(polylines: [
+              Polyline(points: [for (final s in stops) if (num0(s['lat']) != 0) LatLng(num0(s['lat']), num0(s['lng']))], color: const Color(0x991F4FE0), strokeWidth: 3, pattern: StrokePattern.dashed(segments: const [8, 6])),
+            ]),
           MarkerLayer(markers: [
-            for (final s in stops)
-              if (num0(s['lat']) != 0)
+            for (var i = 0; i < stops.length; i++)
+              if (num0(stops[i]['lat']) != 0)
                 Marker(
-                  point: LatLng(num0(s['lat']), num0(s['lng'])), width: 170, height: 48, alignment: Alignment.topCenter,
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), margin: const EdgeInsets.only(bottom: 3),
-                      decoration: BoxDecoration(color: DC.surface, borderRadius: BorderRadius.circular(7), border: Border.all(color: DC.borderStrong), boxShadow: const [BoxShadow(color: Color(0x240F172A), blurRadius: 10, offset: Offset(0, 3))]),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Container(width: 7, height: 7, decoration: BoxDecoration(shape: BoxShape.circle, color: switch ('${s['status']}') { 'Delivered' => DC.ok, 'Due' || 'Partial' => DC.warn, 'Cancelled' => DC.danger, _ => const Color(0xFF2563EB) })),
-                        const SizedBox(width: 5),
-                        Flexible(child: Text('${s['retailer_name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(11, w: FontWeight.w600, h: 1.3))),
-                      ]),
-                    ),
-                    Container(width: 11, height: 11, decoration: BoxDecoration(color: DC.accent, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Color(0x400F172A), blurRadius: 6, offset: Offset(0, 2))])),
-                  ]),
+                  point: LatLng(num0(stops[i]['lat']), num0(stops[i]['lng'])), width: 34, height: 34,
+                  child: GestureDetector(
+                    onTap: () => _open(stops[i]),
+                    child: Builder(builder: (_) {
+                      final dot = stopDot(stops[i], i + 1);
+                      return Container(
+                        decoration: BoxDecoration(color: dot.bg, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5), boxShadow: HC.liftSm),
+                        alignment: Alignment.center,
+                        child: Text(dot.text, style: hs(13, w: w8, color: dot.fg, h: 1)),
+                      );
+                    }),
+                  ),
                 ),
             if (_lat != null)
               Marker(
-                point: LatLng(_lat!, _lng!), width: 28, height: 28,
-                child: Container(decoration: BoxDecoration(color: const Color(0xFF2563EB), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5), boxShadow: const [BoxShadow(color: Color(0x402563EB), spreadRadius: 3)])),
+                point: LatLng(_lat!, _lng!), width: 22, height: 22,
+                child: Container(decoration: BoxDecoration(color: HC.blue, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Color(0x401F4FE0), spreadRadius: 6)])),
               ),
           ]),
         ],
-      ),
-    );
-  }
-
-  Widget _card(Map<String, dynamic> s, bool queued, List<String> reasons, List<Map<String, dynamic>> damageProducts, bool editable) {
-    final st = '${s['status']}';
-    final (bg, bd) = switch (st) {
-      'Delivered' => (const Color(0xFF059669), const Color(0xFF047857)),
-      'Due' || 'Partial' => (const Color(0xFFD97706), const Color(0xFFB45309)),
-      'Cancelled' => (const Color(0xFFD92D20), const Color(0xFFB42318)),
-      _ => (const Color(0xFF2563EB), const Color(0xFF1D4ED8)),
-    };
-    final pending = st == 'Pending';
-    final paid = num0(s['paid_amount']) + num0(s['old_due_collected']);
-    final sub = '${s['address'] ?? ''}'.isNotEmpty ? '${s['address']}' : ('${s['phone'] ?? ''}'.isNotEmpty ? '${s['phone']}' : 'অবস্থান পিনকৃত');
-    const white = Color(0xE0FFFFFF);
-    return GestureDetector(
-      onTap: () => Navigator.of(context)
-          .push<bool>(MaterialPageRoute(builder: (_) => StopPage(stop: s, reasons: reasons, editable: editable, damageProducts: damageProducts)))
-          .then((v) => v == true ? _load(silent: true) : null),
-      child: Container(
-        width: 220, padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: bd), boxShadow: const [BoxShadow(color: Color(0x290F172A), blurRadius: 16, offset: Offset(0, 6))]),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: Text('${s['retailer_name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(13.5, w: FontWeight.w700, color: Colors.white, h: 1.25))),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(color: const Color(0x38FFFFFF), borderRadius: BorderRadius.circular(99), border: Border.all(color: const Color(0x5CFFFFFF))),
-              child: Text(queued ? 'সিঙ্ক বাকি' : statusBn(st), style: ts(10.5, w: FontWeight.w600, color: Colors.white, h: 1.4)),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          Text('$sub · ${_distText(s['_d'] as double?)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(11.5, color: white, tabular: true)),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.only(top: 6),
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0x3DFFFFFF)))),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text(pending ? 'পরিশোধযোগ্য' : 'পরিশোধ / বকেয়া', style: ts(12, color: white)),
-              Flexible(child: Text(pending ? bnMoney(_shouldPay(s), smart: true) : '${bnMoney(paid, smart: true)} / ${bnMoney(s['due_amount'] ?? 0, smart: true)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(12, w: FontWeight.w700, color: Colors.white, tabular: true))),
-            ]),
-          ),
-        ]),
       ),
     );
   }

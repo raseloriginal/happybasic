@@ -31,18 +31,20 @@ class _TrackerBannerState extends State<TrackerBanner> {
       builder: (context, _) {
         final t = Tracker.instance;
         final ok = t.running && t.problem == null;
+        if (ok && _batteryOk) return const SizedBox.shrink(); // all good: stay out of the way
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(color: ok ? const Color(0xFFDCFCE7) : const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: ok ? const Color(0xFFEAF0FF) : const Color(0xFFFDECEA), borderRadius: BorderRadius.circular(14),
+              boxShadow: const [BoxShadow(color: Color(0x1A0A1640), blurRadius: 12, offset: Offset(0, 4))]),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Icon(ok ? Icons.my_location : Icons.location_off, size: 20, color: ok ? kOk : kDanger),
+              Icon(ok ? Icons.my_location : Icons.location_off, size: 20, color: ok ? kBlue : kDanger),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   ok ? 'লোকেশন ট্র্যাকিং চালু — পার্টনার আপনার অবস্থান দেখতে পাচ্ছেন।' : (t.problem ?? 'লোকেশন ট্র্যাকিং বন্ধ আছে।'),
-                  style: TextStyle(fontSize: 13, color: ok ? kOk : kDanger),
+                  style: TextStyle(fontSize: 13, color: ok ? kInk : kDanger),
                 ),
               ),
               if (!ok) TextButton(onPressed: () => Tracker.instance.start(widget.role), child: const Text('চালু করুন')),

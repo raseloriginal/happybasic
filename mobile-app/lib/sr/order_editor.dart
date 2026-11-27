@@ -5,13 +5,14 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/offline.dart';
 import '../ui/common.dart';
+import '../ui/hkit.dart';
 import '../ui/pwa_kit.dart';
-import '../ui/skit.dart';
+import 'sr_history.dart';
 
 Color _tint(Object? hex) {
   final s = (hex ?? '').toString().replaceFirst('#', '');
   final v = int.tryParse(s.length == 6 ? 'FF$s' : s, radix: 16);
-  return v == null ? SC.subtle : Color(v);
+  return v == null ? HC.bg : Color(v);
 }
 
 String _trim(double v) => v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(2);
@@ -28,6 +29,7 @@ class _Line {
   double get rate => num0(p['pc_price']);
   double get base => pcs * rate;
   double get oc => total - base;
+  double get perPc => pcs > 0 ? total / pcs : rate;
   String get unitBnName => unitBn('${p['unit_type']}');
 
   String get badge {
@@ -39,7 +41,38 @@ class _Line {
   }
 }
 
-/// Step 2 of the SR order flow: pick products for one shop (grid / list), review the cart, confirm.
+Widget _thumb(Map<String, dynamic> p, double size, double radius) => Container(
+      width: size, height: size,
+      decoration: BoxDecoration(color: _tint(p['tint']), borderRadius: BorderRadius.circular(radius)),
+      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.all(size > 50 ? 6 : 3),
+      child: NetImage(ApiClient.asset(p['image']), fit: BoxFit.contain,
+          fallback: Center(child: Text('${p['code'] ?? '${p['name']}'.characters.first}', style: hs(size > 50 ? 15 : 12, w: w8, color: HC.ink2)))),
+    );
+
+/// Number pad entry for a stepper value (long counts are faster to type than to tap).
+Future<int?> _askNumber(BuildContext context, String title, int value) async {
+  final c = TextEditingController(text: value == 0 ? '' : '$value');
+  final r = await showDialog<int>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title, style: hs(16, w: w7)),
+      content: TextField(
+        controller: c, autofocus: true, keyboardType: TextInputType.number, textAlign: TextAlign.center,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly], style: hs(24, w: w8, num: true),
+        onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v) ?? 0),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('বাতিল')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, int.tryParse(c.text) ?? 0), child: const Text('ঠিক আছে')),
+      ],
+    ),
+  );
+  c.dispose();
+  return r;
+}
+
+/// SR3 — product catalogue for one shop (category rail, grid / list), floating cart bar; SR3b product sheet; SR4 success.
 class OrderEditorPage extends StatefulWidget {
   const OrderEditorPage({super.key, required this.shop, required this.products, this.existing});
   final Map<String, dynamic> shop;
@@ -53,6 +86,7 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
   final Map<String, _Line> _cart = {};
   final _search = TextEditingController();
   String _q = '';
+  String? _cat;
   bool _list = false;
   int? _orderId; // set once saved online, so a second save updates the same order
 
@@ -64,7 +98,7 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
     super.initState();
     if (widget.existing != null) {
       _orderId = int0(widget.existing!['id']);
-      for (final it in (widget.existing!['items'] as List)) {
+      for (final it in (widget.existing!['items'] as List? ?? const [])) {
         final m = Map<String, dynamic>.from(it as Map);
         for (final p in widget.products) {
           if ('${p['id']}' == '${m['product_id']}') _cart['${p['id']}'] = _Line(p, pcs: int0(m['pcs']), total: num0(m['total']));
@@ -81,6 +115,16 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
 
   List<_Line> get _lines => _cart.values.where((l) => l.pcs > 0).toList();
   double get _sum => _lines.fold(0, (a, l) => a + l.total);
+  int get _pcs => _lines.fold(0, (a, l) => a + l.pcs);
+
+  List<String> get _cats {
+    final s = <String>{};
+    for (final p in widget.products) {
+      final c = '${p['category'] ?? ''}'.trim();
+      if (c.isNotEmpty) s.add(c);
+    }
+    return s.toList();
+  }
 
   Future<void> _openProduct(Map<String, dynamic> p) async {
     if (_locked) {
@@ -88,27 +132,13 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
       return;
     }
     final key = '${p['id']}';
-    final res = await showModalBottomSheet<_Line?>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent, useSafeArea: true,
-      builder: (_) => _ProductSheet(line: _cart[key] ?? _Line(p), existing: _cart.containsKey(key)),
-    );
-    if (!mounted) return;
-    setState(() {
-      if (res == null) {
-        // dismissed
-      } else if (res.pcs <= 0) {
-        _cart.remove(key);
-      } else {
-        _cart[key] = res;
-      }
-    });
+    final res = await showHSheet<_Line>(context, builder: (_) => _ProductSheet(line: _cart[key] ?? _Line(p), existing: _cart.containsKey(key)));
+    if (!mounted || res == null) return;
+    setState(() => res.pcs <= 0 ? _cart.remove(key) : _cart[key] = res);
   }
 
   Future<void> _review() async {
-    final go = await showModalBottomSheet<String>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent, useSafeArea: true,
-      builder: (_) => _CartSheet(lines: _lines, editing: _editing && !_locked),
-    );
+    final go = await showHSheet<String>(context, builder: (_) => _CartSheet(shop: widget.shop, lines: _lines, editing: _editing && !_locked));
     if (go == 'confirm') {
       await _save();
     } else if (go == 'cancel') {
@@ -133,14 +163,14 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
       'items': [for (final l in lines) {'product_id': int0(l.p['id']), 'pcs': l.pcs, 'total': l.total}],
       'at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
     };
+    // The server keeps one open order per shop and day, so an offline save (queued) safely replaces it later.
     final r = await busy(context, () => _editing
-        ? ApiClient.send('PUT', '/sr/orders/$_orderId', body: body).then((d) => WriteResult(data: d))
+        ? OfflineQueue.write('PUT', '/sr/orders/$_orderId', body: body, label: '${widget.shop['name']}-এর অর্ডার পরিবর্তন')
         : OfflineQueue.write('POST', '/sr/orders', body: body, label: '${widget.shop['name']}-এর অর্ডার'));
     if (r == null || !mounted) return;
+    HapticFeedback.mediumImpact();
     Map<String, dynamic>? order;
-    if (r.queued) {
-      toast(context, 'ইন্টারনেট নেই — অর্ডার ফোনে সংরক্ষিত, নেট এলে পাঠানো হবে।');
-    } else {
+    if (!r.queued) {
       final warnings = (r.data['warnings'] as List?)?.map((e) => '$e').toList() ?? [];
       if (warnings.isNotEmpty) toast(context, warnings.join('\n'));
       if (r.data['order'] is Map) {
@@ -148,18 +178,18 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
         _orderId = int0(order['id']);
       }
     }
-    final next = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => _SuccessPage(shop: widget.shop, lines: _lines, order: order, queued: r.queued)));
+    final next = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => _SuccessPage(shop: widget.shop, lines: lines, order: order, queued: r.queued)));
     if (!mounted) return;
     if (next == true) Navigator.pop(context, true); // "অন্য দোকানে যান"
     // otherwise "সম্পাদনা" — stay here with the cart
   }
 
   Future<void> _cancel() async {
-    if (!await confirm(context, 'অর্ডার বাতিল করবেন?', danger: true, yes: 'বাতিল করুন')) return;
+    if (!await confirm(context, 'অর্ডার বাতিল করবেন?', body: '${widget.shop['name']}-এর আজকের অর্ডার মুছে যাবে।', danger: true, yes: 'বাতিল করুন')) return;
     if (!mounted) return;
-    final r = await busy(context, () => ApiClient.send('DELETE', '/sr/orders/$_orderId'));
+    final r = await busy(context, () => OfflineQueue.write('DELETE', '/sr/orders/$_orderId', label: '${widget.shop['name']}-এর অর্ডার বাতিল'));
     if (r != null && mounted) {
-      toast(context, (r['message'] ?? 'বাতিল হয়েছে।').toString());
+      toast(context, r.queued ? 'ইন্টারনেট এলে বাতিল হবে।' : (r.data['message'] ?? 'বাতিল হয়েছে।').toString());
       Navigator.pop(context, true);
     }
   }
@@ -167,188 +197,220 @@ class _OrderEditorPageState extends State<OrderEditorPage> {
   @override
   Widget build(BuildContext context) {
     final q = _q.trim().toLowerCase();
-    final shown = widget.products.where((p) => q.isEmpty || '${p['name']} ${p['code']}'.toLowerCase().contains(q)).toList();
+    final shown = widget.products.where((p) {
+      if (_cat != null && '${p['category'] ?? ''}' != _cat) return false;
+      return q.isEmpty || '${p['name']} ${p['code']}'.toLowerCase().contains(q);
+    }).toList();
+    final cats = _cats;
     final count = _lines.length;
-    return SPage(
-      child: Column(children: [
-        SSubHead(
-          title: '${widget.shop['name']}',
-          sub: '${widget.shop['address'] ?? ''}'.isEmpty ? 'পণ্য নির্বাচন করুন' : '${widget.shop['address']}',
-          trailing: _ViewSwitch(list: _list, onChanged: (v) => setState(() => _list = v)),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: const BoxDecoration(color: SC.subtle, border: Border(bottom: BorderSide(color: SC.border))),
-          child: Container(
-            height: 36, padding: const EdgeInsets.symmetric(horizontal: 11),
-            decoration: BoxDecoration(color: SC.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: SC.border)),
-            child: Row(children: [
-              const Svg('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', size: 15, color: SC.muted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _search, onChanged: (v) => setState(() => _q = v),
-                  style: ts(13), decoration: InputDecoration(hintText: 'পণ্য খুঁজুন (বাংলা / Banglish)…', hintStyle: ts(13, color: SC.muted), border: InputBorder.none, isDense: true, filled: false, contentPadding: EdgeInsets.zero),
+    final bottom = MediaQuery.of(context).padding.bottom;
+    final dist = widget.shop['_dist'];
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.bg,
+        body: Stack(children: [
+          CustomScrollView(slivers: [
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(18, MediaQuery.of(context).padding.top + 14, 18, 8),
+              sliver: SliverToBoxAdapter(
+              child: SkyBox(
+                height: _cart.isEmpty ? 150 : 176,
+                child: Padding(
+                  padding: EdgeInsets.zero,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    SkyHead(
+                      leading: const SkyBack(),
+                      kicker: _editing ? 'অর্ডার সম্পাদনা' : (dist == null ? 'নতুন অর্ডার' : 'নতুন অর্ডার · $dist'),
+                      title: '${widget.shop['name']}',
+                      trailing: GlassBtn(
+                        icon: _list
+                            ? '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'
+                            : '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
+                        label: _list ? 'গ্রিড ভিউ' : 'লিস্ট ভিউ',
+                        onTap: () => setState(() => _list = !_list),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      height: 48, padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: HC.liftSm),
+                      child: Row(children: [
+                        const Svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', size: 18, color: HC.muted),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _search, onChanged: (v) => setState(() => _q = v), textInputAction: TextInputAction.search,
+                            style: hs(14.5), decoration: InputDecoration(hintText: 'পণ্য খুঁজুন…', hintStyle: hs(14.5, color: HC.faint), border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, isDense: true, filled: false, contentPadding: EdgeInsets.zero),
+                          ),
+                        ),
+                        if (_q.isNotEmpty)
+                          Semantics(button: true, label: 'মুছুন', child: GestureDetector(
+                            onTap: () => setState(() {
+                              _search.clear();
+                              _q = '';
+                            }),
+                            child: const Padding(padding: EdgeInsets.all(6), child: Svg('<path d="M18 6 6 18M6 6l12 12"/>', size: 16, color: HC.muted, stroke: 2.2)),
+                          )),
+                      ]),
+                    ),
+                    if (_cart.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text('কার্টে: ${_lines.map((l) => '${l.p['name']}').join(' · ')}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12.5, w: w5, color: HC.onSky)),
+                    ],
+                  ]),
                 ),
               ),
-              if (_q.isNotEmpty)
-                GestureDetector(
-                  onTap: () => setState(() { _search.clear(); _q = ''; }),
-                  child: Container(width: 20, height: 20, decoration: const BoxDecoration(color: SC.neutralBg, shape: BoxShape.circle), child: Center(child: Text('×', style: ts(14, color: SC.muted, h: 1)))),
+            )),
+            if (cats.length > 1)
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 54,
+                  child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(18, 10, 18, 6), children: [
+                    for (final c in [null, ...cats])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Semantics(button: true, selected: _cat == c, child: GestureDetector(
+                          onTap: () => setState(() => _cat = c),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(color: _cat == c ? HC.ink : Colors.white, borderRadius: BorderRadius.circular(99), border: Border.all(color: _cat == c ? HC.ink : HC.line)),
+                            child: Text(c ?? 'সব', style: hs(13.5, w: w6, color: _cat == c ? Colors.white : HC.ink2)),
+                          ),
+                        )),
+                      ),
+                  ]),
                 ),
-            ]),
-          ),
-        ),
-        if (_locked)
-          Container(
-            width: double.infinity, margin: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-            child: const SDayStatus(Text('এই অর্ডার ট্রিপে চলে গেছে — আর পরিবর্তন করা যাবে না।')),
-          ),
-        Expanded(
-          child: shown.isEmpty
-              ? const Padding(padding: EdgeInsets.all(14), child: SEmpty('কোনো পণ্য পাওয়া যায়নি।'))
-              : _list
-                  ? ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 16), itemCount: shown.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8), itemBuilder: (_, i) => _card(shown[i], list: true))
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 16), itemCount: shown.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 196),
-                      itemBuilder: (_, i) => _card(shown[i], list: false)),
-        ),
-        Container(
-          padding: EdgeInsets.fromLTRB(16, 10, 16, 12 + MediaQuery.of(context).padding.bottom),
-          decoration: const BoxDecoration(color: SC.surface, border: Border(top: BorderSide(color: SC.border)), boxShadow: [BoxShadow(color: Color(0x0F0F172A), blurRadius: 16, offset: Offset(0, -4))]),
-          child: Row(children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('মোট', style: ts(11.5, w: FontWeight.w600, color: SC.muted)),
-                Row(children: [
-                  Flexible(child: Text(bnMoney(_sum, smart: true), maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(20, w: FontWeight.w800, h: 1.15, tabular: true))),
-                  if (count > 0) ...[
-                    const SizedBox(width: 7),
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: SC.cobaltSoft, borderRadius: BorderRadius.circular(99)), child: Text('${bn(count)}টি', style: ts(11, w: FontWeight.w700, color: SC.cobalt, h: 1.3))),
-                  ],
-                ]),
-              ]),
-            ),
-            SBtn(_editing ? 'অর্ডার আপডেট' : 'অর্ডার পাঠান', height: 44, radius: 12, size: 14, onTap: count == 0 || _locked ? null : _review),
+              ),
+            if (_locked)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+                  child: HCard(color: HC.redSoft, border: false, child: Text('এই অর্ডার ট্রিপে চলে গেছে — আর পরিবর্তন করা যাবে না।', style: hs(13, w: w6, color: HC.red))),
+                ),
+              ),
+            SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(18, 12, 18, 10), child: HSec(_cat ?? 'সব পণ্য', trailing: '${bn(shown.length)}টি'))),
+            if (shown.isEmpty)
+              const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 18), child: HEmpty('কোনো পণ্য পাওয়া যায়নি', body: 'অন্য নামে খুঁজুন বা "সব" বাছুন।')))
+            else if (_list)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(18, 0, 18, 110 + bottom),
+                sliver: SliverList.separated(itemCount: shown.length, separatorBuilder: (_, _) => gap8, itemBuilder: (_, i) => _listCard(shown[i])),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(18, 0, 18, 110 + bottom),
+                sliver: SliverGrid.builder(
+                  itemCount: shown.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, mainAxisExtent: 206),
+                  itemBuilder: (_, i) => _gridCard(shown[i]),
+                ),
+              ),
           ]),
-        ),
-      ]),
-    );
-  }
-
-  Widget _card(Map<String, dynamic> p, {required bool list}) {
-    final inCart = _cart['${p['id']}'];
-    final avail = int0(p['available_pcs']);
-    final qpu = int0(p['qty_per_unit']).clamp(1, 100000);
-    final unit = unitBn('${p['unit_type']}');
-    final image = ApiClient.asset(p['image']);
-    final img = Container(
-      width: list ? 58 : double.infinity, height: list ? 58 : 92,
-      padding: EdgeInsets.all(list ? 4 : 8),
-      decoration: BoxDecoration(color: _tint(p['tint']), borderRadius: list ? BorderRadius.circular(10) : null),
-      child: Stack(children: [
-        Positioned.fill(child: NetImage(image, fit: BoxFit.contain, fallback: Center(child: Text('${p['code'] ?? ''}', style: ts(14, w: FontWeight.w800))))),
-        if (inCart != null && !list)
-          Positioned(top: -1, right: -1, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: SC.cobalt, borderRadius: BorderRadius.circular(99)), child: Text(inCart.badge, style: ts(10.5, w: FontWeight.w700, color: Colors.white, h: 1.3)))),
-      ]),
-    );
-    final info = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Text('${p['name']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: ts(13, w: FontWeight.w700, h: 1.3)),
-      const SizedBox(height: 3),
-      Text.rich(TextSpan(style: ts(12, color: SC.muted, tabular: true), children: [
-        TextSpan(text: '${bn(qpu)} পিস / $unit · '),
-        TextSpan(text: 'স্টক ${bn(avail < 0 ? 0 : avail)}', style: ts(12, color: avail > 0 ? SC.muted : SC.dangerText)),
-      ]), maxLines: 1, overflow: TextOverflow.ellipsis),
-      const SizedBox(height: 3),
-      if (list)
-        Row(children: [
-          Text.rich(TextSpan(style: ts(12.5, w: FontWeight.w700, tabular: true), children: [TextSpan(text: bnMoney(p['unit_price'], smart: true)), TextSpan(text: ' /$unit', style: ts(12, color: SC.muted, w: FontWeight.w400))])),
-          const SizedBox(width: 8),
-          Text('${bnMoney(p['pc_price'], smart: true)} /পিস', style: ts(12, color: SC.muted, tabular: true)),
-          if (inCart != null) ...[const Spacer(), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: SC.cobalt, borderRadius: BorderRadius.circular(99)), child: Text(inCart.badge, style: ts(10.5, w: FontWeight.w700, color: Colors.white, h: 1.3)))],
-        ])
-      else ...[
-        Text.rich(TextSpan(style: ts(12.5, w: FontWeight.w700, tabular: true), children: [TextSpan(text: bnMoney(p['unit_price'], smart: true)), TextSpan(text: ' /$unit', style: ts(12, color: SC.muted, w: FontWeight.w400))])),
-        Text('${bnMoney(p['pc_price'], smart: true)} /পিস', style: ts(12, color: SC.muted, tabular: true)),
-      ],
-    ]);
-    return GestureDetector(
-      onTap: () => _openProduct(p),
-      child: Container(
-        decoration: BoxDecoration(color: SC.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: inCart != null ? SC.cobalt : SC.border, width: 1.5), boxShadow: inCart != null ? const [BoxShadow(color: Color(0x1F1A4FD8), blurRadius: 14, offset: Offset(0, 4))] : null),
-        clipBehavior: Clip.antiAlias,
-        padding: list ? const EdgeInsets.all(8) : EdgeInsets.zero,
-        child: list
-            ? Row(children: [ClipRRect(borderRadius: BorderRadius.circular(10), child: img), const SizedBox(width: 10), Expanded(child: info)])
-            : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [img, Padding(padding: const EdgeInsets.fromLTRB(10, 9, 10, 10), child: info)]),
+          if (count > 0)
+            Positioned(
+              left: 14, right: 14, bottom: 12 + bottom,
+              child: _CartBar(count: count, pcs: _pcs, sum: _sum, label: _editing ? 'আপডেট' : 'অর্ডার পাঠান', onTap: _locked ? null : _review),
+            ),
+        ]),
       ),
     );
   }
-}
 
-class _ViewSwitch extends StatelessWidget {
-  const _ViewSwitch({required this.list, required this.onChanged});
-  final bool list;
-  final ValueChanged<bool> onChanged;
-  @override
-  Widget build(BuildContext context) {
-    Widget b(String label, bool on, bool value) => GestureDetector(
-          onTap: () => onChanged(value),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(color: on ? SC.ink : Colors.transparent, borderRadius: BorderRadius.circular(7)),
-            child: Text(label, style: ts(11.5, w: FontWeight.w600, color: on ? Colors.white : SC.ink2, h: 1.3)),
+  ({String text, bool low}) _stock(Map<String, dynamic> p) {
+    final avail = int0(p['available_pcs']);
+    final low = avail <= int0(p['qty_per_unit']).clamp(1, 100000) * 2;
+    return (text: 'স্টক ${bn(avail < 0 ? 0 : avail)}${low ? ' · কম' : ''}', low: low);
+  }
+
+  Widget _badge(_Line l) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: HC.blue, borderRadius: BorderRadius.circular(99)),
+        child: Text(l.badge, style: hs(11, w: w7, color: Colors.white, h: 1.3)),
+      );
+
+  Widget _gridCard(Map<String, dynamic> p) {
+    final inCart = _cart['${p['id']}'];
+    final st = _stock(p);
+    final unit = unitBn('${p['unit_type']}');
+    return HCard(
+      padding: EdgeInsets.zero, radius: 20, onTap: () => _openProduct(p), border: inCart == null,
+      child: Container(
+        decoration: inCart == null ? null : BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: HC.blue, width: 2)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Container(
+            height: 104, margin: const EdgeInsets.all(6), padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: _tint(p['tint']), borderRadius: BorderRadius.circular(15)),
+            child: Stack(children: [
+              Positioned.fill(child: NetImage(ApiClient.asset(p['image']), fit: BoxFit.contain, fallback: Center(child: Text('${p['code'] ?? ''}', style: hs(15, w: w8, color: HC.ink2))))),
+              if (inCart != null) Positioned(top: 0, left: 0, child: _badge(inCart)),
+            ]),
           ),
-        );
-    return Container(
-      padding: const EdgeInsets.all(3), decoration: BoxDecoration(color: SC.neutralBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: SC.border)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [b('গ্রিড', !list, false), const SizedBox(width: 2), b('লিস্ট', list, true)]),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 2, 12, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${p['name']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(13.5, w: w6, h: 1.3)),
+              const SizedBox(height: 4),
+              Row(children: [
+                Text(tk(p['pc_price']), style: hs(15, w: w8, num: true)),
+                Text(' /পিস', style: hs(11, color: HC.muted)),
+              ]),
+              Text('${tk(p['unit_price'])}/$unit · ${st.text}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(11.5, color: st.low ? HC.red : HC.muted, num: true)),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _listCard(Map<String, dynamic> p) {
+    final inCart = _cart['${p['id']}'];
+    final st = _stock(p);
+    final unit = unitBn('${p['unit_type']}');
+    return HCard(
+      padding: const EdgeInsets.all(10), radius: 18, onTap: () => _openProduct(p),
+      child: Row(children: [
+        _thumb(p, 56, 14),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${p['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14, w: w6)),
+          Text('${tk(p['pc_price'])}/পিস · ${tk(p['unit_price'])}/$unit', style: hs(12, color: HC.muted, num: true)),
+          Text(st.text, style: hs(11.5, color: st.low ? HC.red : HC.muted, num: true)),
+        ])),
+        if (inCart != null) _badge(inCart) else const Svg('<path d="M12 5v14M5 12h14"/>', size: 20, color: HC.blue, stroke: 2.4),
+      ]),
     );
   }
 }
 
-/// Bottom-sheet scaffold used by the product / cart sheets (`.modal-panel`).
-class _Sheet extends StatelessWidget {
-  const _Sheet({required this.title, this.sub, required this.body, required this.footer, this.icon});
-  final String title;
-  final String? sub;
-  final Widget body, footer;
-  final Widget? icon;
+/// Floating dark cart bar (SR3).
+class _CartBar extends StatelessWidget {
+  const _CartBar({required this.count, required this.pcs, required this.sum, required this.label, required this.onTap});
+  final int count, pcs;
+  final double sum;
+  final String label;
+  final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => Align(
-        alignment: Alignment.bottomCenter,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: kFrameW, maxHeight: MediaQuery.of(context).size.height * 0.88),
-          child: Container(
-            decoration: const BoxDecoration(color: SC.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(20)), border: Border(top: BorderSide(color: SC.border))),
-            clipBehavior: Clip.antiAlias,
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Padding(padding: const EdgeInsets.only(top: 9, bottom: 3), child: Container(width: 38, height: 4, decoration: BoxDecoration(color: SC.borderStrong, borderRadius: BorderRadius.circular(99)))),
-              Container(
-                padding: const EdgeInsets.fromLTRB(16, 10, 14, 12),
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: SC.border))),
-                child: Row(children: [
-                  if (icon != null) ...[icon!, const SizedBox(width: 9)],
-                  Expanded(child: SSecTitle(title, sub: sub)),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(width: 34, height: 34, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: SC.border)), child: const Center(child: Svg('<path d="M18 6 6 18M6 6l12 12"/>', size: 16, color: SC.ink2, stroke: 2.2))),
-                  ),
-                ]),
-              ),
-              Flexible(child: body),
-              footer,
-            ]),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+        decoration: BoxDecoration(color: HC.ink, borderRadius: BorderRadius.circular(22), boxShadow: HC.lift),
+        child: Row(children: [
+          Container(
+            width: 44, height: 44, alignment: Alignment.center,
+            decoration: BoxDecoration(color: const Color(0x1FFFFFFF), borderRadius: BorderRadius.circular(14)),
+            child: Text(bn(count), style: hs(17, w: w8, color: Colors.white, num: true)),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text('${bn(pcs)} পিস · ${bn(count)}টি পণ্য', style: hs(12, color: HC.onDark, num: true)),
+            Text(tk(sum), maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(19, w: w8, color: Colors.white, num: true, h: 1.2)),
+          ])),
+          HBtn(label, kind: HBtnKind.white, expand: false, height: 46, radius: 15, fontSize: 14, trailingIcon: '<path d="M5 12h14M13 6l6 6-6 6"/>', onTap: onTap),
+        ]),
       );
 }
 
-/// Quantity (ইউনিট / পিস), rate and total of one product — the difference to the base price is the O/C.
+/// SR3b — quantity (unit / pcs), rate and total of one product; the difference to the base price is the O/C.
 class _ProductSheet extends StatefulWidget {
   const _ProductSheet({required this.line, required this.existing});
   final _Line line;
@@ -359,48 +421,48 @@ class _ProductSheet extends StatefulWidget {
 
 class _ProductSheetState extends State<_ProductSheet> {
   late String _mode = widget.line.qpu == 1 ? 'pcs' : widget.line.mode;
-  late final _unit = TextEditingController();
-  late final _extra = TextEditingController();
-  late final _pcsC = TextEditingController();
+  int _units = 0, _extra = 0, _pcsOnly = 0;
   late final _rate = TextEditingController();
   late final _total = TextEditingController();
   bool _manual = false;
 
   _Line get l => widget.line;
-  int get _pcs => _mode == 'unit' ? (int.tryParse(_unit.text) ?? 0) * l.qpu + (int.tryParse(_extra.text) ?? 0) : (int.tryParse(_pcsC.text) ?? 0);
+  int get _pcs => _mode == 'unit' ? _units * l.qpu + _extra : _pcsOnly;
   double get _base => _pcs * l.rate;
   double get _totalVal => double.tryParse(_total.text) ?? 0;
 
   @override
   void initState() {
     super.initState();
-    final pcs = widget.existing ? l.pcs : 0;
     if (widget.existing) {
-      _setQty(pcs);
+      _setQty(l.pcs);
       _total.text = _trim(l.total);
-      _manual = (l.total - pcs * l.rate).abs() > 0.009;
+      _manual = (l.total - l.pcs * l.rate).abs() > 0.009;
     } else {
       if (l.qpu > 1) {
-        _unit.text = '1';
-        _extra.text = '0';
+        _units = 1;
       } else {
-        _pcsC.text = '1';
+        _pcsOnly = 1;
       }
       _total.text = _trim(_base);
     }
     _syncRate();
   }
 
-  void _setQty(int pcs) {
-    if (_mode == 'unit') {
-      _unit.text = '${pcs ~/ l.qpu}';
-      _extra.text = '${pcs % l.qpu}';
-    } else {
-      _pcsC.text = '$pcs';
-    }
+  @override
+  void dispose() {
+    _rate.dispose();
+    _total.dispose();
+    super.dispose();
   }
 
-  /// rate shown per ইউনিট (unit mode) or per পিস
+  void _setQty(int pcs) {
+    _units = pcs ~/ l.qpu;
+    _extra = pcs % l.qpu;
+    _pcsOnly = pcs;
+  }
+
+  /// rate shown per unit (unit mode) or per piece
   void _syncRate() {
     final pcs = _pcs;
     final perPc = pcs > 0 ? _totalVal / pcs : l.rate;
@@ -408,7 +470,13 @@ class _ProductSheetState extends State<_ProductSheet> {
   }
 
   void _onQty() {
-    if (!_manual) _total.text = _pcs == 0 ? '' : _trim(_base);
+    if (_manual && _pcs > 0) {
+      // keep the agreed rate, scale the total
+      final r = double.tryParse(_rate.text) ?? 0;
+      _total.text = _trim((_mode == 'unit' ? r / l.qpu : r) * _pcs);
+    } else {
+      _total.text = _pcs == 0 ? '' : _trim(_base);
+    }
     _syncRate();
     setState(() {});
   }
@@ -427,44 +495,6 @@ class _ProductSheetState extends State<_ProductSheet> {
     setState(() {});
   }
 
-  void _step(TextEditingController c, int d, {int min = 0}) {
-    final n = ((int.tryParse(c.text) ?? 0) + d).clamp(min, 1000000);
-    c.text = '$n';
-    _onQty();
-  }
-
-  Widget _stepper(TextEditingController c, {int min = 0}) => Row(children: [
-        _stepBtn('−', () => _step(c, -1, min: min)),
-        const SizedBox(width: 5),
-        Expanded(child: _field(c, onChanged: (_) => _onQty(), center: true)),
-        const SizedBox(width: 5),
-        _stepBtn('+', () => _step(c, 1, min: min)),
-      ]);
-
-  Widget _stepBtn(String t, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Container(width: 38, height: 38, decoration: BoxDecoration(color: SC.subtle, borderRadius: BorderRadius.circular(10), border: Border.all(color: SC.borderStrong)), child: Center(child: Text(t, style: ts(18, w: FontWeight.w600, h: 1)))),
-      );
-
-  Widget _field(TextEditingController c, {ValueChanged<String>? onChanged, bool center = false, bool decimal = false}) => SizedBox(
-        height: 40,
-        child: TextField(
-          controller: c, onChanged: onChanged,
-          textAlign: center ? TextAlign.center : TextAlign.start,
-          keyboardType: TextInputType.numberWithOptions(decimal: decimal),
-          inputFormatters: [FilteringTextInputFormatter.allow(decimal ? RegExp(r'[0-9.]') : RegExp(r'[0-9]'))],
-          style: ts(13.5, w: center ? FontWeight.w700 : FontWeight.w400, tabular: true),
-          decoration: InputDecoration(
-            isDense: true, filled: true, fillColor: SC.surface, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: SC.borderStrong)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: SC.borderStrong)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: SC.cobalt)),
-          ),
-        ),
-      );
-
-  Widget _label(String t) => Padding(padding: const EdgeInsets.only(bottom: 5), child: Text(t, style: ts(12.5, w: FontWeight.w600, color: SC.ink2)));
-
   void _save() {
     final pcs = _pcs;
     if (pcs <= 0) {
@@ -478,6 +508,43 @@ class _ProductSheetState extends State<_ProductSheet> {
     Navigator.pop(context, _Line(l.p, pcs: pcs, total: _totalVal, mode: _mode));
   }
 
+  Widget _stepper(String label, int value, ValueChanged<int> set, {String? hint}) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text.rich(TextSpan(style: hs(13, w: w6, color: HC.ink2), children: [TextSpan(text: label), if (hint != null) TextSpan(text: ' · $hint', style: hs(12, color: HC.muted))])),
+        const SizedBox(height: 6),
+        HStepper(
+          value: value,
+          onChanged: (v) {
+            set(v);
+            _onQty();
+          },
+          onTapValue: () async {
+            final v = await _askNumber(context, label, value);
+            if (v != null && mounted) {
+              set(v);
+              _onQty();
+            }
+          },
+        ),
+      ]);
+
+  Widget _money(String label, TextEditingController c, ValueChanged<String> onChanged, String sub) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: hs(13, w: w6, color: HC.ink2)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: c, onChanged: onChanged,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+          style: hs(17, w: w7, num: true),
+          decoration: InputDecoration(
+            prefixText: '৳ ', prefixStyle: hs(15, w: w6, color: HC.muted),
+            isDense: true, filled: true, fillColor: HC.bg, contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HC.blue, width: 1.5)),
+          ),
+        ),
+        Padding(padding: const EdgeInsets.only(top: 5), child: Text(sub, style: hs(11.5, color: HC.muted, num: true))),
+      ]);
+
   @override
   Widget build(BuildContext context) {
     final p = l.p;
@@ -485,186 +552,119 @@ class _ProductSheetState extends State<_ProductSheet> {
     final oc = _totalVal - _base;
     final over = oc > 0.009, comm = oc < -0.009;
     final avail = int0(p['available_pcs']);
-    return _Sheet(
-      title: '${p['name']}',
-      sub: '${bn(l.qpu)} পিস / $unit · স্টক ${bn(avail < 0 ? 0 : avail)}',
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (l.qpu > 1) ...[
-            _label('অর্ডারের ধরন'),
-            Container(
-              padding: const EdgeInsets.all(3), decoration: BoxDecoration(color: SC.neutralBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: SC.border)),
-              child: Row(children: [
-                for (final m in [('unit', 'ইউনিট'), ('pcs', 'পিস')])
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_mode == m.$1) return;
-                        final pcs = _pcs;
-                        _mode = m.$1;
-                        _setQty(pcs);
-                        _syncRate();
-                        setState(() {});
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(color: _mode == m.$1 ? SC.surface : Colors.transparent, borderRadius: BorderRadius.circular(8), border: Border.all(color: _mode == m.$1 ? const Color(0xFFC7D7FE) : Colors.transparent)),
-                        child: Center(child: Text(m.$2, style: ts(13, w: FontWeight.w600, color: _mode == m.$1 ? SC.cobalt : SC.ink2))),
-                      ),
-                    ),
-                  ),
-              ]),
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (_mode == 'unit')
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(unit), _stepper(_unit)])),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('পিস'), _stepper(_extra)])),
-            ])
-          else
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('পরিমাণ (পিস)'), _stepper(_pcsC)]),
-          const SizedBox(height: 12),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _label(_mode == 'unit' ? 'প্রতি ইউনিট দর (৳)' : 'প্রতি পিস দর (৳)'),
-                _field(_rate, onChanged: _onRate, decimal: true),
-                Padding(padding: const EdgeInsets.only(top: 5), child: Text('বেজ: ${bnMoney(_mode == 'unit' ? l.rate * l.qpu : l.rate, smart: true)}', style: ts(12, color: SC.muted, tabular: true))),
-              ]),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _label('মোট টাকা (৳)'),
-                _field(_total, onChanged: _onTotal, decimal: true),
-                Padding(padding: const EdgeInsets.only(top: 5), child: Text('নির্ধারিত: ${bnMoney(_base, smart: true)}', style: ts(12, color: SC.muted, tabular: true))),
-              ]),
-            ),
-          ]),
-          if (_pcs > avail && avail >= 0)
-            Padding(padding: const EdgeInsets.only(top: 10), child: Text('${bn(_pcs)} পিস — স্টকের চেয়ে বেশি!', style: ts(12, w: FontWeight.w600, color: SC.warnText))),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-            decoration: BoxDecoration(color: over ? SC.okBg : (comm ? SC.warnBg : SC.subtle), borderRadius: BorderRadius.circular(10), border: Border.all(color: over ? SC.okBorder : (comm ? SC.warnBorder : SC.border))),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('হিসাবকৃত O/C', style: ts(12, color: SC.muted)),
-                Text(over ? 'ওভার (বেশি দামে)' : (comm ? 'কমিশন (কম দামে)' : 'নির্ধারিত দর'), style: ts(11.5, color: SC.ink2)),
-              ]),
-              Text(bnMoney(oc.abs(), smart: true), style: ts(17, w: FontWeight.w800, color: over ? SC.ok : (comm ? SC.warnText : SC.ink), tabular: true)),
-            ]),
-          ),
-        ]),
-      ),
-      footer: Container(
-        padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.of(context).padding.bottom),
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: SC.border))),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        _thumb(p, 56, 16),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${p['name']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(17, w: w8, h: 1.25)),
+          Text.rich(TextSpan(style: hs(12.5, color: HC.muted, num: true), children: [
+            TextSpan(text: '${bn(l.qpu)} পিস / $unit · '),
+            TextSpan(text: 'স্টক ${bn(avail < 0 ? 0 : avail)}', style: hs(12.5, color: avail > 0 ? HC.muted : HC.red, num: true)),
+          ])),
+        ])),
+        Semantics(button: true, label: 'বন্ধ করুন', child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: HC.line)),
+              child: const Center(child: Svg('<path d="M18 6 6 18M6 6l12 12"/>', size: 16, color: HC.ink, stroke: 2.2))),
+        )),
+      ]),
+      const SizedBox(height: 16),
+      if (l.qpu > 1) ...[
+        HSeg(
+          onSky: false, index: _mode == 'unit' ? 0 : 1, items: ['$unit (ইউনিট)', 'শুধু পিস'],
+          onTap: (i) {
+            final m = i == 0 ? 'unit' : 'pcs';
+            if (_mode == m) return;
+            final pcs = _pcs;
+            _mode = m;
+            _setQty(pcs);
+            _syncRate();
+            setState(() {});
+          },
+        ),
+        const SizedBox(height: 14),
+      ],
+      if (_mode == 'unit')
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _stepper(unit, _units, (v) => _units = v, hint: '${bn(l.qpu)} পিস')),
+          const SizedBox(width: 12),
+          Expanded(child: _stepper('খোলা পিস', _extra, (v) => _extra = v)),
+        ])
+      else
+        _stepper('পিস', _pcsOnly, (v) => _pcsOnly = v),
+      if (_pcs > avail && avail >= 0)
+        Padding(padding: const EdgeInsets.only(top: 8), child: Text('${bn(_pcs)} পিস — স্টকের চেয়ে বেশি!', style: hs(12.5, w: w6, color: HC.red))),
+      const SizedBox(height: 14),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: _money(_mode == 'unit' ? 'প্রতি $unit দর' : 'প্রতি পিস দর', _rate, _onRate, 'বেজ ${tk(_mode == 'unit' ? l.rate * l.qpu : l.rate)}')),
+        const SizedBox(width: 12),
+        Expanded(child: _money('মোট টাকা', _total, _onTotal, 'নির্ধারিত ${tk(_base)}')),
+      ]),
+      const SizedBox(height: 12),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(color: over ? HC.soft : (comm ? HC.redSoft : HC.bg), borderRadius: BorderRadius.circular(16)),
         child: Row(children: [
-          if (widget.existing) SBtn('সরান', kind: SBtnKind.dangerGhost, size: 12.5, onTap: () => Navigator.pop(context, _Line(l.p))),
-          const Spacer(),
-          SBtn('বাতিল', kind: SBtnKind.secondary, onTap: () => Navigator.pop(context)),
-          const SizedBox(width: 8),
-          SBtn('অর্ডারে যোগ করুন', onTap: _save),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('আমার ওভার / কমিশন', style: hs(13, w: w6, color: HC.ink2)),
+            Text(over ? 'বেশি দামে বিক্রি — ওভার' : (comm ? 'কম দামে বিক্রি — কমিশন' : 'নির্ধারিত দরে'), style: hs(11.5, color: HC.muted)),
+          ])),
+          Text(sMoney(oc), style: hs(19, w: w8, color: over ? HC.blue : (comm ? HC.red : HC.ink), num: true)),
         ]),
       ),
-    );
+      const SizedBox(height: 16),
+      Row(children: [
+        if (widget.existing) ...[
+          HBtn('সরান', kind: HBtnKind.danger, expand: false, height: 52, radius: 16, fontSize: 14, onTap: () => Navigator.pop(context, _Line(l.p))),
+          const SizedBox(width: 8),
+        ] else ...[
+          HBtn('বাতিল', kind: HBtnKind.line, expand: false, height: 52, radius: 16, fontSize: 14, onTap: () => Navigator.pop(context)),
+          const SizedBox(width: 8),
+        ],
+        Expanded(child: HBtn('${widget.existing ? 'আপডেট' : 'অর্ডারে যোগ করুন'} · ${tk(_totalVal)}', height: 52, fontSize: 14.5, onTap: _save)),
+      ]),
+    ]);
   }
 }
 
-/// Cart review (`#orderCartModal`): lines with O/C tag, total, confirm.
+/// Cart review before sending: lines with O/C, totals, confirm (and cancel for a saved order).
 class _CartSheet extends StatelessWidget {
-  const _CartSheet({required this.lines, required this.editing});
+  const _CartSheet({required this.shop, required this.lines, required this.editing});
+  final Map<String, dynamic> shop;
   final List<_Line> lines;
   final bool editing;
   @override
   Widget build(BuildContext context) {
     final oc = lines.fold<double>(0, (a, l) => a + l.oc);
     final sum = lines.fold<double>(0, (a, l) => a + l.total);
-    final over = oc > 0.009, comm = oc < -0.009;
-    return _Sheet(
-      title: 'অর্ডার সারাংশ',
-      icon: const Svg('<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>', size: 20, color: SC.cobalt, stroke: 2.1),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        child: Container(
-          decoration: BoxDecoration(color: SC.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: SC.border)),
-          clipBehavior: Clip.antiAlias,
-          child: Column(children: [
-            Container(
-              color: SC.subtle, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-              child: Row(children: [
-                Expanded(flex: 5, child: Text('পণ্য', style: ts(10.5, w: FontWeight.w700, color: SC.muted))),
-                Expanded(flex: 3, child: Text('পরিমাণ', textAlign: TextAlign.center, style: ts(10.5, w: FontWeight.w700, color: SC.muted))),
-                Expanded(flex: 3, child: Text('মূল্য', textAlign: TextAlign.right, style: ts(10.5, w: FontWeight.w700, color: SC.muted))),
-              ]),
-            ),
-            for (var i = 0; i < lines.length; i++) _row(lines[i], last: i == lines.length - 1),
-          ]),
-        ),
-      ),
-      footer: Container(
-        padding: EdgeInsets.fromLTRB(14, 12, 14, 14 + MediaQuery.of(context).padding.bottom),
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: SC.border))),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(color: SC.subtle, borderRadius: BorderRadius.circular(14), border: Border.all(color: SC.border)),
-            child: Row(children: [
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('O/C ${bnMoney(oc.abs(), smart: true)}', style: ts(12, w: FontWeight.w700, color: over ? SC.ok : (comm ? SC.warnText : SC.ink2), tabular: true)),
-                  Text.rich(TextSpan(style: ts(12.5, color: SC.ink2, tabular: true), children: [const TextSpan(text: 'মোট: '), TextSpan(text: bnMoney(sum, smart: true), style: ts(16, w: FontWeight.w700))])),
-                ]),
-              ),
-              SBtn('অর্ডার কনফার্ম', height: 42, onTap: () => Navigator.pop(context, 'confirm')),
-            ]),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      Text('অর্ডার দেখে নিন', style: hs(18, w: w8)),
+      Text('${shop['name']} · ${bn(lines.length)}টি পণ্য', style: hs(12.5, color: HC.muted)),
+      gap12,
+      HList(children: [
+        for (final l in lines)
+          HItemRow(
+            name: '${l.p['name']}', sub: '${l.badge} · ${tk(l.perPc)}/পিস', amount: tk(l.total),
+            tag: l.oc.abs() > 0.009 ? sMoney(l.oc) : null, tagOver: l.oc > 0, image: _thumb(l.p, 38, 11),
           ),
-          if (editing) Padding(padding: const EdgeInsets.only(top: 8), child: Center(child: SBtn('অর্ডারটি বাতিল করুন', kind: SBtnKind.dangerGhost, size: 12.5, onTap: () => Navigator.pop(context, 'cancel')))),
-        ]),
-      ),
-    );
-  }
-
-  Widget _row(_Line l, {required bool last}) {
-    final oc = l.oc;
-    final image = ApiClient.asset(l.p['image']);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      decoration: BoxDecoration(border: last ? null : const Border(top: BorderSide(color: SC.border))),
-      child: Row(children: [
-        Expanded(
-          flex: 5,
-          child: Row(children: [
-            Container(width: 36, height: 36, decoration: BoxDecoration(color: _tint(l.p['tint']), borderRadius: BorderRadius.circular(9), border: Border.all(color: SC.border)), clipBehavior: Clip.antiAlias, child: NetImage(image, fallback: Center(child: Text('${l.p['code'] ?? ''}', style: ts(10, w: FontWeight.w800, h: 1))))),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${l.p['name']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: ts(12.5, w: FontWeight.w700, h: 1.25)),
-                if (oc.abs() > 0.009)
-                  Container(
-                    margin: const EdgeInsets.only(top: 3), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(color: oc > 0 ? SC.okBg : SC.warnBg, borderRadius: BorderRadius.circular(5), border: Border.all(color: oc > 0 ? SC.okBorder : SC.warnBorder)),
-                    child: Text('${oc > 0 ? '+' : '−'}${bn(num2(oc.abs()))} O/C', style: ts(10.5, w: FontWeight.w700, color: oc > 0 ? SC.ok : SC.warnText, h: 1.4)),
-                  ),
-              ]),
-            ),
-          ]),
-        ),
-        Expanded(
-          flex: 3,
-          child: Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: SC.subtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: SC.border)), child: Text(l.badge, style: ts(11.5, w: FontWeight.w700)))),
-        ),
-        Expanded(flex: 3, child: Text(bnMoney(l.total, smart: true), textAlign: TextAlign.right, style: ts(12.5, w: FontWeight.w700, tabular: true))),
       ]),
-    );
+      gap12,
+      HStrip(style: StripStyle.soft, [
+        HStat('মোট', tk(sum)),
+        HStat('ওভার / কমিশন', sMoney(oc), color: oc > 0.009 ? HC.blue : (oc < -0.009 ? HC.red : HC.ink)),
+      ]),
+      gap16,
+      HBtn(editing ? 'অর্ডার আপডেট করুন' : 'অর্ডার কনফার্ম করুন', trailingIcon: '<path d="M5 12h14M13 6l6 6-6 6"/>', onTap: () => Navigator.pop(context, 'confirm')),
+      if (editing) ...[
+        gap8,
+        HBtn('অর্ডারটি বাতিল করুন', kind: HBtnKind.danger, height: 48, onTap: () => Navigator.pop(context, 'cancel')),
+      ],
+    ]);
   }
 }
 
-/// Step 3: "অর্ডার পাঠানো হয়েছে" + memo receipt.
+/// SR4 — "অর্ডার পাঠানো হয়েছে": items with rate and O/C, total, over/commission/net.
 class _SuccessPage extends StatelessWidget {
   const _SuccessPage({required this.shop, required this.lines, required this.order, required this.queued});
   final Map<String, dynamic> shop;
@@ -675,87 +675,104 @@ class _SuccessPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = lines.fold<double>(0, (a, l) => a + l.total);
-    final oc = lines.fold<double>(0, (a, l) => a + l.oc);
+    final over = lines.fold<double>(0, (a, l) => a + (l.oc > 0 ? l.oc : 0));
+    final comm = lines.fold<double>(0, (a, l) => a + (l.oc < 0 ? l.oc : 0));
     final code = order?['code'];
-    return SPage(
-      child: Column(children: [
-        Expanded(
-          child: ListView(padding: EdgeInsets.fromLTRB(14, 18 + MediaQuery.of(context).padding.top, 14, 18), children: [
-            Column(children: [
-              Container(width: 60, height: 60, decoration: const BoxDecoration(color: SC.ok, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0x4715803D), blurRadius: 20, offset: Offset(0, 8))]), child: const Center(child: Svg('<polyline points="20 6 9 17 4 12"/>', size: 28, color: Colors.white, stroke: 2.8))),
-              const SizedBox(height: 9),
-              Text(queued ? 'অর্ডার ফোনে সংরক্ষিত' : 'অর্ডার পাঠানো হয়েছে', style: ts(19, w: FontWeight.w800)),
-              Text(queued ? 'ইন্টারনেট এলে পাঠানো হবে' : 'অর্ডার কনফার্ম হয়েছে', style: ts(12.5, w: FontWeight.w600, color: SC.muted)),
-            ]),
-            const SizedBox(height: 14),
-            Container(
-              decoration: BoxDecoration(color: SC.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: SC.border), boxShadow: const [BoxShadow(color: Color(0x140F172A), blurRadius: 24, offset: Offset(0, 8))]),
-              clipBehavior: Clip.antiAlias,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                  decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF1B44C2), Color(0xFF1A4FD8)])),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('অর্ডার রসিদ', style: ts(10.5, w: FontWeight.w600, color: const Color(0xC7FFFFFF))), Text('${shop['name']}', style: ts(16, w: FontWeight.w800, color: Colors.white))])),
-                    Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text('মেমো নং', style: ts(10.5, w: FontWeight.w600, color: const Color(0xC7FFFFFF))), Text(code == null ? '—' : bn(code), style: ts(15, w: FontWeight.w700, color: Colors.white, tabular: true))]),
-                  ]),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: const BoxDecoration(color: SC.subtle, border: Border(bottom: BorderSide(color: SC.border))),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text(dateTimeBn(order?['created_at']?.toString() ?? DateTime.now().toIso8601String()), style: ts(11.5, w: FontWeight.w600, color: SC.ink2, tabular: true)),
-                    if (order?['sr'] != null) Flexible(child: Text('SR: ${order!['sr']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(11.5, w: FontWeight.w600, color: SC.ink2))),
-                  ]),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: SC.border))),
-                  child: Row(children: [
-                    Expanded(flex: 5, child: Text('বিবরণ', style: ts(11, w: FontWeight.w700, color: SC.muted))),
-                    Expanded(flex: 3, child: Text('পরিমাণ', textAlign: TextAlign.center, style: ts(11, w: FontWeight.w700, color: SC.muted))),
-                    Expanded(flex: 3, child: Text('টাকা', textAlign: TextAlign.right, style: ts(11, w: FontWeight.w700, color: SC.muted))),
-                  ]),
-                ),
-                for (var i = 0; i < lines.length; i++)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                    decoration: BoxDecoration(border: i == lines.length - 1 ? null : const Border(bottom: BorderSide(color: SC.border))),
-                    child: Row(children: [
-                      Expanded(flex: 5, child: Text('${lines[i].p['name']}', style: ts(12.5, w: FontWeight.w700, h: 1.3))),
-                      Expanded(flex: 3, child: Text(lines[i].badge, textAlign: TextAlign.center, style: ts(12.5, tabular: true))),
-                      Expanded(flex: 3, child: Text(bnMoney(lines[i].total, smart: true), textAlign: TextAlign.right, style: ts(12.5, tabular: true))),
+    final top = MediaQuery.of(context).padding.top;
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.bg,
+        body: Column(children: [
+          Expanded(
+            child: ListView(padding: EdgeInsets.fromLTRB(18, top + 14, 18, 16), children: [
+              SkyBox(
+                height: 260,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(children: [
+                    Container(
+                      width: 68, height: 68,
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: HC.liftSm),
+                      child: Center(child: queued
+                          ? const Svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', size: 30, color: HC.blue, stroke: 2.4)
+                          : const Svg('<polyline points="20 6 9 17 4 12"/>', size: 32, color: HC.blue, stroke: 3)),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(queued ? 'অর্ডার ফোনে সংরক্ষিত' : 'অর্ডার পাঠানো হয়েছে', style: hs(22, w: w8, color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text('${shop['name']}${code == null ? '' : ' · মেমো #${bn(code)}'} · আজ', style: hs(13, color: HC.onSky, num: true)),
+                    const SizedBox(height: 12),
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      HChip('${bn(lines.length)}টি পণ্য', bg: const Color(0x26FFFFFF), fg: Colors.white),
+                      const SizedBox(width: 8),
+                      HChip(queued ? 'নেট এলে পাঠানো হবে' : 'ডেলিভারিতে নগদ', bg: const Color(0x26FFFFFF), fg: Colors.white),
                     ]),
-                  ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13), color: SC.ink,
-                  child: Row(children: [
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('দোকানের মোট', style: ts(13, w: FontWeight.w700, color: Colors.white)),
-                        Text.rich(TextSpan(style: ts(11, color: const Color(0xB8FFFFFF), tabular: true), children: [
-                          const TextSpan(text: 'ডেলিভারিতে নগদ · O/C '),
-                          TextSpan(text: bnMoney(oc.abs(), smart: true), style: ts(11, w: FontWeight.w700, color: oc > 0 ? const Color(0xFF86EFAC) : (oc < 0 ? const Color(0xFFFDE68A) : Colors.white))),
-                        ])),
+                  ]),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 22),
+                child: Padding(
+                  padding: EdgeInsets.zero,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    HCard(
+                      lift: true, radius: 24, padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        for (var i = 0; i < lines.length; i++) ...[
+                          if (i > 0) const Divider(height: 1, color: HC.line),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            child: Row(children: [
+                              LetterAvatar('${lines[i].p['name']}', size: 38, radius: 12, bg: HC.soft, fg: HC.blue, fontSize: 15),
+                              const SizedBox(width: 12),
+                              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Text('${lines[i].p['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14, w: w6)),
+                                Text('${bn(lines[i].pcs)} × ${tk(lines[i].perPc)}', style: hs(12, color: HC.muted, num: true)),
+                              ])),
+                              if (lines[i].oc.abs() > 0.009) ...[
+                                HChip(sMoney(lines[i].oc), bg: lines[i].oc > 0 ? HC.soft : HC.redSoft, fg: lines[i].oc > 0 ? HC.blue : HC.red, size: 11),
+                                const SizedBox(width: 8),
+                              ],
+                              Text(tk(lines[i].total), style: hs(14, w: w7, num: true)),
+                            ]),
+                          ),
+                        ],
+                        const HDashed(),
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          Expanded(child: Text('মোট · ডেলিভারিতে নগদ', style: hs(13.5, w: w6, color: HC.ink2))),
+                          Text(tk(total), style: hs(24, w: w8, num: true)),
+                        ]),
                       ]),
                     ),
-                    Text(bnMoney(total, smart: true), style: ts(22, w: FontWeight.w800, color: Colors.white, h: 1.1, tabular: true)),
+                    gap12,
+                    HStrip(style: StripStyle.dark, [
+                      HStat('ওভার', sMoney(over), color: over > 0.009 ? HC.lilac : Colors.white),
+                      HStat('কমিশন', sMoney(comm), color: comm < -0.009 ? HC.redOnDark : Colors.white),
+                      HStat('নিট', sMoney(over + comm), color: Colors.white),
+                    ]),
                   ]),
                 ),
-              ]),
-            ),
-          ]),
-        ),
-        Container(
-          padding: EdgeInsets.fromLTRB(14, 12, 14, 14 + MediaQuery.of(context).padding.bottom),
-          decoration: const BoxDecoration(color: SC.surface, border: Border(top: BorderSide(color: SC.border))),
-          child: Row(children: [
-            Expanded(flex: 100, child: SBtn('সম্পাদনা / ফেরত', kind: SBtnKind.secondary, height: 44, radius: 12, icon: const Svg('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>', size: 15, color: SC.ink), onTap: () => Navigator.pop(context, false))),
-            const SizedBox(width: 10),
-            Expanded(flex: 135, child: SBtn('অন্য দোকানে যান', height: 44, radius: 12, icon: null, onTap: () => Navigator.pop(context, true))),
-          ]),
-        ),
-      ]),
+              ),
+            ]),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(18, 10, 18, 12 + MediaQuery.of(context).padding.bottom),
+            color: HC.bg,
+            child: Row(children: [
+              Expanded(
+                flex: 10,
+                child: order != null
+                    ? HBtn('মেমো', kind: HBtnKind.line, height: 52, onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => SrOrderDetailPage(order: order!, date: DateTime.now().toIso8601String().substring(0, 10)))))
+                    : HBtn('সম্পাদনা', kind: HBtnKind.line, height: 52, onTap: () => Navigator.pop(context, false)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(flex: 14, child: HBtn('অন্য দোকানে যান', height: 52, onTap: () => Navigator.pop(context, true))),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 }

@@ -105,8 +105,24 @@ final class DsrApiController extends DsrController
             $dsr = $this->dsr();
             $date = $this->pickedDate() ?? date('Y-m-d');
             $row = DsrMonitor::attendanceOn($dsr['id'], $date);
+            $wage = null;
+            foreach (DsrMonitor::overview($dsr['partner_id'], substr($date, 0, 7)) as $o) {
+                if ($o['id'] === (int) $dsr['id']) {
+                    $wage = [
+                        'worked' => $o['totals']['worked'] ?? 0,
+                        'daily_wage' => $o['daily_wage'],
+                        'wage' => $o['wage'],
+                        'over' => $o['over'],
+                        'advance' => $o['advance'],
+                        'short' => $o['short'],
+                        'paid' => $o['paid'],
+                        'net' => $o['net'],
+                    ];
+                }
+            }
 
             return [
+                'wage' => $wage,
                 'selectedDate' => $date,
                 'is_today' => $date === date('Y-m-d'),
                 'today' => $row !== null && $row['checked_in_at'] !== null ? $row : null,

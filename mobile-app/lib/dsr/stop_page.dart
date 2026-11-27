@@ -1,14 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/api.dart';
 import '../core/format.dart';
 import '../core/offline.dart';
 import '../ui/common.dart';
+import '../ui/hkit.dart';
+import '../ui/pwa_kit.dart';
 import 'damage_page.dart';
-import 'delivery_page.dart' show statusBn, statusColor;
+import 'delivery_page.dart' show statusBn;
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
+
+String _fmt(double v) => v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(2);
 
 class _Item {
   _Item(Map<String, dynamic> j, bool pending)
@@ -18,20 +25,15 @@ class _Item {
         stock = int0(j['stock']),
         srRate = num0(j['sr_rate']),
         baseRate = num0(j['base_rate']) {
-    qty = pending ? (ordered < stock ? ordered : stock) : int0(j['qty']);
-    ctl.text = '$qty';
+    qty = pending ? full : int0(j['qty']);
   }
   final int productId;
   final String name;
   final int ordered, stock;
   final double srRate, baseRate;
   late int qty;
-  final ctl = TextEditingController();
-
-  void set(int v) {
-    qty = v < 0 ? 0 : (v > stock ? stock : v);
-    ctl.text = '$qty';
-  }
+  int get full => ordered < stock ? ordered : stock;
+  void set(int v) => qty = v < 0 ? 0 : (v > stock ? stock : v);
 }
 
 class _Order {
@@ -47,9 +49,11 @@ class _Order {
   bool cancelled;
   final List<_Item> items;
   double get gross => cancelled ? 0 : items.fold(0, (a, i) => a + i.qty * i.srRate);
+  double get orderedValue => items.fold(0, (a, i) => a + i.ordered * i.srRate);
 }
 
-/// One shop's delivery: delivered pieces per product, cancel with a reason, payment.
+/// DMD — one shop's delivery: pieces per product, "সব দিলাম", damage, cancel with a reason, then the payment sheet.
+/// Saving shows DM4 (delivered + undo); works offline through the queue.
 class StopPage extends StatefulWidget {
   const StopPage({super.key, required this.stop, required this.reasons, required this.editable, required this.damageProducts});
   final Map<String, dynamic> stop;
@@ -63,7 +67,6 @@ class StopPage extends StatefulWidget {
 class _StopPageState extends State<StopPage> {
   late final List<_Order> _orders;
   late final List<Map<String, dynamic>> _damages;
-  final _paid = TextEditingController();
   String _cancelReason = '';
 
   Map<String, dynamic> get _s => widget.stop;
@@ -77,20 +80,28 @@ class _StopPageState extends State<StopPage> {
     _orders = (_s['companies'] as List).map(_m).where((c) => c['ready_sale'] != true).map((c) => _Order(c, _pending)).toList();
     _damages = (_s['damages'] as List?)?.map(_m).toList() ?? [];
     _cancelReason = '${_s['cancel_reason'] ?? ''}';
-    final shouldPay = _shouldPay;
-    _paid.text = _pending ? _fmt(shouldPay) : _fmt(num0(_s['paid_amount']) + num0(_s['old_due_collected']));
   }
 
-  static String _fmt(double v) => v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(2);
-
   double get _gross => _orders.fold(0, (a, o) => a + o.gross);
+  double get _ordered => _orders.fold(0, (a, o) => a + o.orderedValue);
   double get _damage => _damages.fold(0, (a, d) => a + num0(d['amount']));
-  double get _shouldPay => (_gross - _damage).clamp(0, double.infinity);
-  double get _cap => _shouldPay + _oldDue;
-  double get _paidVal => (double.tryParse(_paid.text) ?? 0).clamp(0, _cap).toDouble();
+  double get _shouldPay => (_gross - _damage).clamp(0, double.infinity).toDouble();
+  double get _over => _orders.fold(0, (a, o) => a + (o.cancelled ? 0 : o.items.fold<double>(0, (b, i) => b + i.qty * (i.srRate - i.baseRate))));
+
+  void _all() {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      for (final o in _orders) {
+        o.cancelled = false;
+        for (final i in o.items) {
+          i.qty = i.full;
+        }
+      }
+    });
+  }
 
   Future<void> _cancelOrder(_Order o) async {
-    final picked = await _reasonDialog();
+    final picked = await _reasonSheet();
     if (picked == null) return;
     setState(() {
       o.cancelled = true;
@@ -98,54 +109,43 @@ class _StopPageState extends State<StopPage> {
         i.set(0);
       }
       _cancelReason = picked;
-      _paid.text = _fmt(_shouldPay);
     });
   }
 
-  Future<String?> _reasonDialog() async {
-    String chosen = widget.reasons.first;
+  Future<String?> _reasonSheet() {
+    var chosen = widget.reasons.isEmpty ? 'অন্যান্য' : widget.reasons.first;
     final note = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, set) => AlertDialog(
-          title: const Text('বাতিলের কারণ'),
-          content: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              RadioGroup<String>(
-                groupValue: chosen,
-                onChanged: (v) => set(() => chosen = v!),
-                child: Column(children: [for (final r in widget.reasons) RadioListTile<String>(dense: true, value: r, title: Text(r, style: const TextStyle(fontSize: 14)))]),
+    return showHSheet<String>(context, builder: (c) => StatefulBuilder(
+      builder: (c, set) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+        Text('পুরো অর্ডার বাতিল করবেন?', style: hs(18, w: w8)),
+        Text('কারণ বাছুন — দোকান ও SR দেখতে পাবে।', style: hs(12.5, color: HC.muted)),
+        gap12,
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final r in widget.reasons)
+            GestureDetector(
+              onTap: () => set(() => chosen = r),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(color: chosen == r ? HC.ink : Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: chosen == r ? HC.ink : HC.line)),
+                child: Text(r, style: hs(13.5, w: w6, color: chosen == r ? Colors.white : HC.ink)),
               ),
-              TextField(controller: note, decoration: const InputDecoration(hintText: 'নোট (ঐচ্ছিক)', isDense: true)),
-            ]),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text('বাতিল')),
-            FilledButton(
-              style: FilledButton.styleFrom(minimumSize: const Size(90, 42)),
-              onPressed: () => Navigator.pop(c, note.text.trim().isEmpty ? chosen : '$chosen (${note.text.trim()})'),
-              child: const Text('নিশ্চিত'),
             ),
-          ],
-        ),
-      ),
-    );
+        ]),
+        gap12,
+        TextField(controller: note, style: hs(14), decoration: InputDecoration(hintText: 'নোট (ঐচ্ছিক)', hintStyle: hs(14, color: HC.faint), filled: true, fillColor: HC.bg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none))),
+        gap16,
+        Row(children: [
+          Expanded(child: HBtn('না', kind: HBtnKind.line, onTap: () => Navigator.pop(c))),
+          const SizedBox(width: 10),
+          Expanded(child: HBtn('হ্যাঁ, বাতিল', kind: HBtnKind.danger, onTap: () => Navigator.pop(c, note.text.trim().isEmpty ? chosen : '$chosen (${note.text.trim()})'))),
+        ]),
+      ]),
+    ));
   }
 
-  Future<void> _save() async {
-    final paid = _paidVal;
-    final forBill = paid < _shouldPay ? paid : _shouldPay;
-    final due = _shouldPay - forBill;
-    final oldCollected = paid - forBill;
-    final ok = await confirm(
-      context, 'ডেলিভারি সংরক্ষণ করবেন?',
-      body: 'বিল ${money(_shouldPay)} · আদায় ${money(paid)}'
-          '${oldCollected > 0 ? ' (পুরনো বাকি ${money(oldCollected)} সহ)' : ''}'
-          '${due > 0 ? '\nনতুন বাকি ${money(due)}' : ''}',
-      yes: 'সংরক্ষণ');
-    if (!ok || !mounted) return;
-
+  Future<void> _pay() async {
+    final paid = await showHSheet<double>(context, builder: (_) => _PaySheet(name: '${_s['retailer_name']}', bill: _shouldPay, oldDue: _oldDue, initial: _pending ? _shouldPay : num0(_s['paid_amount']) + num0(_s['old_due_collected'])));
+    if (paid == null || !mounted) return;
     final body = {
       'orders': [
         for (final o in _orders)
@@ -164,10 +164,13 @@ class _StopPageState extends State<StopPage> {
       'cancel_reason': _orders.any((o) => o.cancelled) ? _cancelReason : '',
     };
     final r = await busy(context, () => OfflineQueue.write('POST', '/dsr/stops/${_s['id']}', body: body, label: '${_s['retailer_name']}-এর ডেলিভারি'));
-    if (r != null && mounted) {
-      toast(context, r.queued ? 'ইন্টারনেট নেই — ফোনে সংরক্ষিত, নেট এলে পাঠানো হবে।' : (r.data['message'] ?? 'ডেলিভারি সংরক্ষিত হয়েছে।').toString());
-      Navigator.pop(context, true);
-    }
+    if (r == null || !mounted) return;
+    HapticFeedback.heavyImpact();
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => _DeliveredPage(
+          stop: _s, orders: _orders, paid: paid, queued: r.queued,
+          invoice: () => _invoice(paid),
+        )));
+    if (mounted) Navigator.pop(context, true);
   }
 
   Future<void> _reset() async {
@@ -180,134 +183,459 @@ class _StopPageState extends State<StopPage> {
     }
   }
 
+  /// DM7 — what was ordered vs. taken and the cash.
+  void _invoice(double paid) => showHSheet(context, builder: (_) => _InvoiceSheet(stop: _s, orders: _orders, paid: paid));
+
   @override
   Widget build(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
     final status = '${_s['status']}';
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${_s['retailer_name']}', overflow: TextOverflow.ellipsis),
-        actions: [
-          if ('${_s['phone']}'.isNotEmpty) IconButton(icon: const Icon(Icons.call), onPressed: () => launchUrl(Uri.parse('tel:${_s['phone']}'))),
-          if (num0(_s['lat']) != 0)
-            IconButton(icon: const Icon(Icons.navigation_outlined), onPressed: () => launchUrl(Uri.parse('google.navigation:q=${_s['lat']},${_s['lng']}'), mode: LaunchMode.externalApplication)),
-        ],
-      ),
-      body: Column(children: [
-        Expanded(
-          child: ListView(padding: const EdgeInsets.all(14), children: [
-            Row(children: [
-              Pill(statusBn(status), color: statusColor(status)),
-              const SizedBox(width: 8),
-              if ('${_s['address']}'.isNotEmpty) Expanded(child: Text('${_s['address']}', style: const TextStyle(color: kMuted, fontSize: 13), overflow: TextOverflow.ellipsis)),
-            ]),
-            if (_oldDue > 0)
-              Container(
-                margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(12)),
-                child: Row(children: [
-                  const Icon(Icons.warning_amber, color: kWarn),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text('এই দোকানের পুরনো বাকি ${money(_oldDue)} — টাকা দিলে আদায় করতে পারবেন।')),
-                ]),
-              ),
-            for (final o in _orders) _orderCard(o),
-            if (_can && widget.damageProducts.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context)
-                      .push<bool>(MaterialPageRoute(builder: (_) => DamagePage(products: widget.damageProducts, stops: [_s], selectedId: int0(_s['id']))))
-                      .then((v) => v == true && mounted ? Navigator.pop(context, true) : null),
-                  child: const Text('+ ড্যামেজ সংগ্রহ'),
+    final phone = '${_s['phone'] ?? ''}';
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.bg,
+        body: Column(children: [
+          Expanded(
+            child: ListView(padding: EdgeInsets.fromLTRB(18, top + 14, 18, 20), children: [
+              SkyBox(
+                height: 150,
+                child: SkyHead(
+                  leading: const SkyBack(),
+                  kicker: _pending ? 'দোকানে ডেলিভারি' : 'সংরক্ষিত · ${statusBn(status)}',
+                  title: '${_s['retailer_name']}',
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (phone.isNotEmpty) GlassBtn(icon: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>', label: 'কল করুন', onTap: () => launchUrl(Uri.parse('tel:$phone'))),
+                    if (num0(_s['lat']) != 0) ...[
+                      const SizedBox(width: 8),
+                      GlassBtn(icon: '<path d="m3 11 19-9-9 19-2-8-8-2z"/>', label: 'পথ দেখান', onTap: () => launchUrl(Uri.parse('google.navigation:q=${_s['lat']},${_s['lng']}'), mode: LaunchMode.externalApplication)),
+                    ],
+                  ]),
                 ),
               ),
-            if (_damages.isNotEmpty) ...[
-              const SectionTitle('ড্যামেজ (বিল থেকে বাদ)'),
-              for (final d in _damages)
-                Card(child: ListTile(dense: true, title: Text('${d['name'] ?? d['product'] ?? 'পণ্য'}'), subtitle: Text('${bn(d['pcs'])} পিস'), trailing: Text('-${money(d['amount'])}', style: const TextStyle(color: kDanger, fontWeight: FontWeight.w700)))),
-            ],
-            const SizedBox(height: 10),
-            if (_can && !_pending)
-              TextButton.icon(onPressed: _reset, icon: const Icon(Icons.undo, color: kDanger), label: const Text('পূর্বাবস্থায় নিন', style: TextStyle(color: kDanger))),
-            const SizedBox(height: 120),
-          ]),
-        ),
-        if (_can) _footer(),
-      ]),
-    );
-  }
-
-  Widget _orderCard(_Order o) {
-    return Card(
-      margin: const EdgeInsets.only(top: 12),
-      color: o.cancelled ? const Color(0xFFF1F5F9) : null,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text('${o.company} · SR ${o.sr}', style: const TextStyle(fontWeight: FontWeight.w800))),
-            if (o.cancelled) const Pill('বাতিল', color: kDanger),
-          ]),
-          Text(o.code, style: const TextStyle(color: kMuted, fontSize: 12)),
-          const SizedBox(height: 6),
-          if (!o.cancelled)
-            for (final i in o.items)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(children: [
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(i.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text('অর্ডার ${bn(i.ordered)} · ভ্যানে ${bn(i.stock)} · ${money(i.srRate)}', style: const TextStyle(color: kMuted, fontSize: 12)),
-                  ])),
-                  if (_can) ...[
-                    IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.remove_circle_outline), onPressed: () => setState(() { i.set(i.qty - 1); _paid.text = _fmt(_shouldPay); })),
-                    SizedBox(
-                      width: 52,
-                      child: NumField(controller: i.ctl, dense: true, onChanged: (v) => setState(() { i.qty = (int.tryParse(v) ?? 0).clamp(0, i.stock); _paid.text = _fmt(_shouldPay); })),
+                padding: const EdgeInsets.only(top: 6),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Text([
+                    if ('${_s['address'] ?? ''}'.isNotEmpty) '${_s['address']}',
+                    if (_orders.isNotEmpty) 'SR: ${_orders.map((o) => o.sr).toSet().join(', ')}',
+                  ].join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12.5, color: HC.onSky)),
+                  const SizedBox(height: 14),
+                  if (!_pending && _can)
+                    HCard(
+                      radius: 18, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(children: [
+                        Expanded(child: Text('সংরক্ষিত · ${statusBn(status)}', style: hs(13.5, w: w6))),
+                        HBtn('পূর্বাবস্থায় নিন', icon: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', kind: HBtnKind.danger, expand: false, height: 38, radius: 12, fontSize: 12.5, onTap: _reset),
+                      ]),
                     ),
-                    IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.add_circle_outline, color: kBlue), onPressed: () {
-                      if (i.qty >= i.stock) toast(context, 'ভ্যানে ${i.name}-এর মাত্র ${bn(i.stock)} পিস আছে।', error: true);
-                      setState(() { i.set(i.qty + 1); _paid.text = _fmt(_shouldPay); });
-                    }),
-                  ] else
-                    Text('${bn(i.qty)} পিস', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  if (_oldDue > 0) ...[
+                    gap8,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                      decoration: BoxDecoration(color: HC.redSoft, borderRadius: BorderRadius.circular(16)),
+                      child: Text('আগের বাকি ${tk(_oldDue)} — টাকা দিলে আদায় হবে।', style: hs(13, w: w6, color: HC.red)),
+                    ),
+                  ],
+                  if (_can) ...[
+                    gap12,
+                    Row(children: [
+                      Expanded(child: HBtn('✓ সব দিলাম', kind: HBtnKind.blue, height: 50, onTap: _all)),
+                      if (widget.damageProducts.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Expanded(child: HBtn('+ ড্যামেজ সংগ্রহ', kind: HBtnKind.line, height: 50, onTap: () => Navigator.of(context)
+                            .push<bool>(MaterialPageRoute(builder: (_) => DamagePage(products: widget.damageProducts, stops: [_s], selectedId: int0(_s['id']))))
+                            .then((v) => v == true && mounted ? Navigator.pop(context, true) : null))),
+                      ],
+                    ]),
+                  ],
+                  for (final o in _orders) ...[gap12, _orderCard(o)],
+                  if (_damages.isNotEmpty) ...[
+                    gap12,
+                    HCard(radius: 20, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Row(children: [
+                        Expanded(child: Text('ড্যামেজ সংগ্রহ', style: hs(14.5, w: w7))),
+                        Text('−${tk(_damage)}', style: hs(14.5, w: w8, color: HC.red, num: true)),
+                      ]),
+                      Text('নষ্ট মাল ভ্যানে নিন · বিল থেকে নিজে বাদ যাবে', style: hs(12, color: HC.muted)),
+                      for (final d in _damages)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(children: [
+                            Expanded(child: Text('${d['name'] ?? d['product'] ?? 'পণ্য'}', style: hs(13.5, w: w6))),
+                            Text('${bn(d['pcs'])} পিস · ${tk(d['amount'])}', style: hs(12.5, color: HC.ink2, num: true)),
+                          ]),
+                        ),
+                    ])),
+                  ],
+                  gap12,
+                  HStrip([
+                    HStat('অর্ডার', tk(_ordered)),
+                    HStat('ডেলিভারি ওভার', sMoney(_over), color: _over > 0.009 ? HC.blue : (_over < -0.009 ? HC.red : HC.ink)),
+                    HStat('প্রদেয় বিল', tk(_shouldPay)),
+                  ]),
                 ]),
               ),
-          if (o.cancelled && _cancelReason.isNotEmpty) Text(_cancelReason, style: const TextStyle(color: kDanger, fontSize: 13)),
+            ]),
+          ),
           if (_can)
-            Align(
-              alignment: Alignment.centerRight,
-              child: o.cancelled
-                  ? TextButton(onPressed: () => setState(() { o.cancelled = false; for (final i in o.items) { i.set(i.ordered < i.stock ? i.ordered : i.stock); } _paid.text = _fmt(_shouldPay); }), child: const Text('বাতিল ফিরিয়ে আনুন'))
-                  : TextButton(onPressed: () => _cancelOrder(o), child: const Text('এই অর্ডার বাতিল', style: TextStyle(color: kDanger))),
+            Container(
+              padding: EdgeInsets.fromLTRB(14, 10, 14, 12 + MediaQuery.of(context).padding.bottom),
+              color: HC.bg,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+                decoration: BoxDecoration(color: HC.ink, borderRadius: BorderRadius.circular(22), boxShadow: HC.lift),
+                child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text('প্রদেয় বিল', style: hs(12, color: HC.onDark)),
+                    Text(tk(_shouldPay), style: hs(20, w: w8, color: Colors.white, num: true, h: 1.2)),
+                  ])),
+                  HBtn(_pending ? 'ডেলিভারি শেষ · পরের ধাপ' : 'আপডেট · টাকা', kind: HBtnKind.white, expand: false, height: 48, radius: 15, fontSize: 13.5, trailingIcon: '<path d="M5 12h14M13 6l6 6-6 6"/>', onTap: _pay),
+                ]),
+              ),
             ),
         ]),
       ),
     );
   }
 
-  Widget _footer() {
-    final paid = _paidVal;
-    final forBill = paid < _shouldPay ? paid : _shouldPay;
-    final due = _shouldPay - forBill;
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: kBorder))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            Expanded(child: Text('বিল ${money(_shouldPay)}${_damage > 0 ? ' (ড্যামেজ বাদে)' : ''}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
-            if (due > 0) Text('বাকি ${money(due)}', style: const TextStyle(color: kDanger, fontWeight: FontWeight.w700)),
+  Widget _orderCard(_Order o) {
+    final cancelled = o.cancelled;
+    return HCard(
+      radius: 22, padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      color: cancelled ? HC.chip : Colors.white,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          LetterAvatar(o.company, size: 40, radius: 12, bg: cancelled ? Colors.white : HC.soft, fg: cancelled ? HC.muted : HC.blue, fontSize: 16),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(o.company, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14.5, w: w7)),
+            Text('${bn(o.code)} · SR ${o.sr}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.muted, num: true)),
+          ])),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(tk(o.gross), style: hs(15, w: w8, num: true)),
+            if (cancelled) const HChip('বাতিল', bg: HC.redSoft, fg: HC.red, size: 10.5),
           ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: NumField(controller: _paid, label: 'আদায় (সর্বোচ্চ ${money(_cap)})', decimal: true, dense: true, onChanged: (_) => setState(() {}))),
-            const SizedBox(width: 10),
-            SizedBox(width: 130, child: FilledButton(onPressed: _save, child: const Text('সংরক্ষণ'))),
-          ]),
+        ]),
+        if (!cancelled)
+          for (final i in o.items)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: const BoxDecoration(border: Border(top: BorderSide(color: HC.line))),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(i.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(13.5, w: w6)),
+                  Text('অর্ডার ${bn(i.ordered)} · ভ্যানে ${bn(i.stock)} · ${tk(i.srRate)}', style: hs(11.5, color: i.stock < i.ordered ? HC.red : HC.muted, num: true)),
+                ])),
+                if (_can) _qty(i) else Text('${bn(i.qty)} পিস', style: hs(13.5, w: w7, num: true)),
+              ]),
+            )
+        else if (_cancelReason.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 8), child: Text(_cancelReason, style: hs(12.5, w: w6, color: HC.red))),
+        if (_can)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: cancelled
+                  ? () => setState(() {
+                        o.cancelled = false;
+                        for (final i in o.items) {
+                          i.qty = i.full;
+                        }
+                      })
+                  : () => _cancelOrder(o),
+              child: Text(cancelled ? 'বাতিল ফিরিয়ে আনুন' : 'এই অর্ডার বাতিল', style: hs(13, w: w6, color: cancelled ? HC.blue : HC.red)),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  Widget _qty(_Item i) {
+    Widget b(String t, bool plus) => Semantics(
+          button: true, label: plus ? 'বাড়ান' : 'কমান',
+          child: GestureDetector(
+            onTap: () {
+              if (plus && i.qty >= i.stock) {
+                toast(context, 'ভ্যানে ${i.name}-এর মাত্র ${bn(i.stock)} পিস আছে।', error: true);
+                return;
+              }
+              HapticFeedback.selectionClick();
+              setState(() => i.set(i.qty + (plus ? 1 : -1)));
+            },
+            child: Container(
+              width: 36, height: 36, alignment: Alignment.center,
+              decoration: BoxDecoration(color: plus ? HC.ink : Colors.white, borderRadius: BorderRadius.circular(11), border: plus ? null : Border.all(color: HC.line2)),
+              child: Text(t, style: hs(19, color: plus ? Colors.white : HC.ink, h: 1)),
+            ),
+          ),
+        );
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      b('−', false),
+      GestureDetector(
+        onTap: () async {
+          final c = TextEditingController(text: '${i.qty}');
+          final v = await showDialog<int>(context: context, builder: (ctx) => AlertDialog(
+                title: Text(i.name, style: hs(15, w: w7)),
+                content: TextField(controller: c, autofocus: true, keyboardType: TextInputType.number, textAlign: TextAlign.center, inputFormatters: [FilteringTextInputFormatter.digitsOnly], style: hs(22, w: w8, num: true)),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('বাতিল')),
+                  FilledButton(onPressed: () => Navigator.pop(ctx, int.tryParse(c.text) ?? 0), child: const Text('ঠিক আছে')),
+                ],
+              ));
+          if (v != null && mounted) setState(() => i.set(v));
+        },
+        child: SizedBox(width: 40, child: Text(bn(i.qty), textAlign: TextAlign.center, style: hs(16, w: w8, num: true))),
+      ),
+      b('+', true),
+    ]);
+  }
+}
+
+/// টাকা গ্রহণ — received cash, quick full / zero, bill + old due split, new due.
+class _PaySheet extends StatefulWidget {
+  const _PaySheet({required this.name, required this.bill, required this.oldDue, required this.initial});
+  final String name;
+  final double bill, oldDue, initial;
+  @override
+  State<_PaySheet> createState() => _PaySheetState();
+}
+
+class _PaySheetState extends State<_PaySheet> {
+  late final _c = TextEditingController(text: _fmt(widget.initial.clamp(0, widget.bill + widget.oldDue).toDouble()));
+
+  double get _cap => widget.bill + widget.oldDue;
+  double get _paid => (double.tryParse(_c.text) ?? 0).clamp(0, _cap).toDouble();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _set(double v) => setState(() => _c.text = _fmt(v));
+
+  @override
+  Widget build(BuildContext context) {
+    final paid = _paid;
+    final forBill = paid < widget.bill ? paid : widget.bill;
+    final oldCollected = paid - forBill;
+    final newDue = widget.bill - forBill;
+    final over = (double.tryParse(_c.text) ?? 0) > _cap + 0.009;
+    Widget quick(String t, double v) => Expanded(
+          child: GestureDetector(
+            onTap: () => _set(v),
+            child: Container(
+              height: 44, alignment: Alignment.center,
+              decoration: BoxDecoration(color: (paid - v).abs() < 0.01 ? HC.soft : HC.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: (paid - v).abs() < 0.01 ? HC.blue : Colors.transparent)),
+              child: Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12.5, w: w7, color: (paid - v).abs() < 0.01 ? HC.blue : HC.ink2, num: true)),
+            ),
+          ),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('টাকা গ্রহণ', style: hs(18, w: w8)),
+          Text(widget.name, style: hs(12.5, color: HC.muted)),
+        ])),
+        Semantics(button: true, label: 'বন্ধ করুন', child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: HC.line)),
+              child: const Center(child: Svg('<path d="M18 6 6 18M6 6l12 12"/>', size: 16, color: HC.ink, stroke: 2.2))),
+        )),
+      ]),
+      gap16,
+      Text('প্রাপ্ত টাকা', style: hs(13, w: w6, color: HC.ink2)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: _c, autofocus: false, onChanged: (_) => setState(() {}),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+        style: hs(28, w: w8, num: true),
+        decoration: InputDecoration(
+          prefixText: '৳ ', prefixStyle: hs(22, w: w7, color: HC.muted), filled: true, fillColor: HC.bg,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: const BorderSide(color: HC.blue, width: 1.5)),
+        ),
+      ),
+      if (over) Padding(padding: const EdgeInsets.only(top: 6), child: Text('সর্বোচ্চ ${tk(_cap)} নেওয়া যাবে।', style: hs(12, w: w6, color: HC.red))),
+      gap8,
+      Row(children: [
+        quick('পুরো বাকি · ৳০', 0),
+        const SizedBox(width: 8),
+        quick('পুরো পেমেন্ট · ${tk(widget.bill)}', widget.bill),
+        if (widget.oldDue > 0) ...[const SizedBox(width: 8), quick('আগের বাকিসহ · ${tk(_cap)}', _cap)],
+      ]),
+      gap16,
+      HCard(radius: 18, color: HC.bg, border: false, child: Column(children: [
+        HKv('মোট প্রদেয় বিল', tk(widget.bill)),
+        const SizedBox(height: 6),
+        HKv('আগের বাকি আদায়', tk(oldCollected), bold: false),
+        const SizedBox(height: 6),
+        HKv('মোট জমা', tk(paid)),
+        const SizedBox(height: 6),
+        HKv('নতুন বাকি', tk(newDue), valueColor: newDue > 0.009 ? HC.red : HC.ink),
+      ])),
+      if (newDue > 0.009) Padding(padding: const EdgeInsets.only(top: 8), child: Text('বাকি ${tk(newDue)} দোকানের হিসাবে যোগ হবে।', style: hs(12, color: HC.muted))),
+      gap16,
+      Row(children: [
+        Expanded(flex: 10, child: HBtn('বাতিল', kind: HBtnKind.line, onTap: () => Navigator.pop(context))),
+        const SizedBox(width: 10),
+        Expanded(flex: 16, child: HBtn('নিশ্চিত করুন', onTap: () => Navigator.pop(context, paid))),
+      ]),
+    ]);
+  }
+}
+
+/// DM4 — delivered: what was handed over, cash received, a short undo window.
+class _DeliveredPage extends StatefulWidget {
+  const _DeliveredPage({required this.stop, required this.orders, required this.paid, required this.queued, required this.invoice});
+  final Map<String, dynamic> stop;
+  final List<_Order> orders;
+  final double paid;
+  final bool queued;
+  final VoidCallback invoice;
+  @override
+  State<_DeliveredPage> createState() => _DeliveredPageState();
+}
+
+class _DeliveredPageState extends State<_DeliveredPage> {
+  static const _window = 300;
+  int _left = _window;
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.queued) {
+      _t = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _left--);
+        if (_left <= 0) _t?.cancel();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _undo() async {
+    final r = await busy(context, () => ApiClient.send('POST', '/dsr/stops/${widget.stop['id']}/reset', opId: ApiClient.newOpId()));
+    if (r != null && mounted) {
+      toast(context, (r['message'] ?? 'পূর্বাবস্থায় নেওয়া হয়েছে।').toString());
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    final lines = [for (final o in widget.orders) if (!o.cancelled) for (final i in o.items) if (i.qty > 0) i];
+    final allCancelled = widget.orders.every((o) => o.cancelled);
+    final mm = (_left ~/ 60), ss = (_left % 60).toString().padLeft(2, '0');
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.bg,
+        body: Column(children: [
+          Expanded(
+            child: ListView(padding: EdgeInsets.fromLTRB(18, top + 14, 18, 16), children: [
+              SkyBox(
+                height: 230,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(children: [
+                    Container(
+                      width: 68, height: 68, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: HC.liftSm),
+                      child: Center(child: Svg(widget.queued ? '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' : (allCancelled ? '<path d="M18 6 6 18M6 6l12 12"/>' : '<polyline points="20 6 9 17 4 12"/>'), size: 30, color: allCancelled ? HC.red : HC.blue, stroke: 3)),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(widget.queued ? 'ফোনে সংরক্ষিত' : (allCancelled ? 'অর্ডার বাতিল হয়েছে' : 'ডেলিভারি হয়েছে'), style: hs(22, w: w8, color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text('${widget.stop['retailer_name']} · ${widget.queued ? 'নেট এলে পাঠানো হবে' : 'এইমাত্র'}', style: hs(13, color: HC.onSky)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 22),
+              HCard(lift: true, radius: 24, padding: const EdgeInsets.fromLTRB(16, 6, 16, 16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                if (lines.isEmpty)
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('কোনো মাল দেওয়া হয়নি।', style: hs(13.5, color: HC.muted)))
+                else
+                  for (var k = 0; k < lines.length; k++) ...[
+                    if (k > 0) const Divider(height: 1, color: HC.line),
+                    HItemRow(name: lines[k].name, sub: '× ${bn(lines[k].qty)}', amount: tk(lines[k].qty * lines[k].srRate), soft: true),
+                  ],
+                const HDashed(),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: Text('নগদ পেয়েছি', style: hs(14, w: w6, color: HC.ink2))),
+                  Text(tk(widget.paid), style: hs(24, w: w8, num: true)),
+                ]),
+              ])),
+              if (!widget.queued && _left > 0) ...[
+                gap12,
+                HCard(
+                  radius: 18, onTap: _undo, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(children: [
+                    Container(width: 36, height: 36, decoration: const BoxDecoration(color: HC.redSoft, shape: BoxShape.circle), child: const Center(child: Svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', size: 17, color: HC.red, stroke: 2.2))),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text('ভুল হয়েছে? Undo করুন', style: hs(14, w: w6))),
+                    Text('${bn(mm)}:${bn(ss)} বাকি', style: hs(12.5, w: w6, color: HC.muted, num: true)),
+                  ]),
+                ),
+              ],
+            ]),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(18, 10, 18, 12 + MediaQuery.of(context).padding.bottom),
+            color: HC.bg,
+            child: Row(children: [
+              Expanded(flex: 10, child: HBtn('ইনভয়েস', kind: HBtnKind.line, height: 52, onTap: widget.invoice)),
+              const SizedBox(width: 10),
+              Expanded(flex: 14, child: HBtn('পরের দোকান', height: 52, trailingIcon: '<path d="M5 12h14M13 6l6 6-6 6"/>', onTap: () => Navigator.pop(context))),
+            ]),
+          ),
         ]),
       ),
     );
+  }
+}
+
+/// DM7 — ordered vs. taken per product, and the cash.
+class _InvoiceSheet extends StatelessWidget {
+  const _InvoiceSheet({required this.stop, required this.orders, required this.paid});
+  final Map<String, dynamic> stop;
+  final List<_Order> orders;
+  final double paid;
+  @override
+  Widget build(BuildContext context) {
+    final items = [for (final o in orders) for (final i in o.items) (i: i, cancelled: o.cancelled)];
+    Widget cell(String t, {int flex = 2, bool head = false, TextAlign align = TextAlign.right, Color color = HC.ink}) =>
+        Expanded(flex: flex, child: Text(t, textAlign: align, style: hs(head ? 11.5 : 13, w: head ? w6 : w5, color: head ? HC.muted : color, num: true)));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      Text('কী অর্ডার · কী নিয়েছে · কত টাকা', style: hs(12.5, color: HC.muted)),
+      Text('${stop['retailer_name']}', style: hs(18, w: w8)),
+      gap12,
+      Row(children: [cell('পণ্য', flex: 5, head: true, align: TextAlign.left), cell('অর্ডার', head: true), cell('নিয়েছে', head: true), cell('টাকা', flex: 3, head: true)]),
+      const Divider(color: HC.line),
+      for (final x in items)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Row(children: [
+            cell(x.i.name, flex: 5, align: TextAlign.left),
+            cell(bn(x.i.ordered)),
+            cell(bn(x.cancelled ? 0 : x.i.qty), color: (x.cancelled ? 0 : x.i.qty) < x.i.ordered ? HC.red : HC.ink),
+            cell(tk(x.cancelled ? 0 : x.i.qty * x.i.srRate), flex: 3),
+          ]),
+        ),
+      const HDashed(),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(child: Text('নগদ দিয়েছে', style: hs(14, w: w6))),
+        Text(tk(paid), style: hs(20, w: w8, num: true)),
+      ]),
+    ]);
   }
 }

@@ -2427,3 +2427,43 @@ input:focus, select:focus { border-color: var(--accent); }
 .hb-track-badge[hidden] { display: none; }
 .hb-track-badge i { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
 .hb-track-badge.is-bad { background: #b42318; } .hb-track-badge.is-bad i { background: #fff; }
+
+/* =========================================================================
+   "Happy অ্যাপ ডিজাইন" (2026-11): blue sky header, navy accent, white cards,
+   pill bottom nav. Token overrides reach the JS-rendered screens too.
+   ========================================================================= */
+:root {
+    --outer-bg: #E3E8F2; --bg: #F4F6FB; --surface-subtle: #F4F6FB;
+    --border: #E6EAF2; --border-strong: #D5DCEB;
+    --ink: #0A1640; --ink-secondary: #475273; --ink-muted: #5B6785;
+    --accent: #0A1640; --accent-hover: #18234A; --link: #1F4FE0;
+    --info: #1F4FE0; --info-bg: #EAF0FF; --info-text: #1F4FE0; --info-border: #C9D6FF;
+    --radius: 18px; --radius-sm: 12px; --bottom-nav-h: 68px;
+    --hp-sky: #1A3FD6; --hp-on-sky: #C9D6FF; --hp-lift: 0 18px 40px rgba(10,22,64,.14);
+}
+html, body { font-family: "Hind Siliguri", "Noto Sans Bengali", "Nirmala UI", "Inter", system-ui, sans-serif; }
+.card { border-radius: 20px; }
+.btn { border-radius: 14px; font-weight: 700; }
+
+/* Sky band behind the header and the first cards (not on the full-screen map) */
+.app-main { position: relative; isolation: isolate; }
+.app-main:not(.is-map-mode)::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: calc(190px + env(safe-area-inset-top)); z-index: 0; pointer-events: none;
+    background-color: var(--hp-sky);
+    background-image: radial-gradient(circle at 85% -10%, rgba(140,180,255,.65), transparent 55%), radial-gradient(rgba(255,255,255,.09) 1.2px, transparent 1.2px);
+    background-size: auto, 16px 16px; clip-path: ellipse(120% 100% at 50% 0%); }
+.app-main > .topbar, .app-main > .content { position: relative; z-index: 1; }
+.app-main > .topbar { position: sticky; z-index: 30; background: var(--hp-sky); border-bottom: 0; height: 58px; padding-top: env(safe-area-inset-top, 0); }
+.topbar .page-title { color: #fff; font-size: 18px; font-weight: 700; }
+.topbar .mobile-brand { width: 34px; height: 34px; border-radius: 10px; border: 0; background: #fff; }
+.topbar .icon-btn { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); color: #fff; }
+.topbar .icon-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+.topbar .btn-primary { background: #fff; color: var(--ink); }
+.page-date-nav { border: 0; box-shadow: var(--hp-lift); }
+
+/* Bottom nav: navy pill behind the active icon */
+.bottom-nav-item { justify-content: flex-start; padding-top: 8px; gap: 4px; font-size: 11px; }
+.bottom-nav-item svg { box-sizing: content-box; padding: 5px 12px; border-radius: 999px; transition: background .2s ease, color .2s ease; }
+.bottom-nav-item.is-active { color: var(--ink); font-weight: 700; }
+.bottom-nav-item.is-active svg { background: var(--ink); color: #fff; stroke-width: 2; }
+.progress-fill { background: #1F4FE0; }
+.dsr-dash-stack > .card:first-of-type, .target-card { background: #fff; border: 0; box-shadow: var(--hp-lift); }

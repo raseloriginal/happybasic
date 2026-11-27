@@ -30,13 +30,12 @@
             <button type="button" class="search-clear-btn" id="retailerSearchClear" aria-label="খোঁজা মুছুন" hidden>&times;</button>
         </div>
 
-        <button type="button" class="btn btn-secondary today-btn" id="openTodayOrdersBtn" title="আজকের অর্ডার">
+        <button type="button" class="map-round-btn today-btn" id="openTodayOrdersBtn" title="আজকের অর্ডার" aria-label="আজকের অর্ডার">
             <span id="todayBtnLabel">আজ</span>
         </button>
 
-        <button type="button" class="btn btn-navy" id="openAddRetailerBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-            <span>নতুন দোকান</span>
+        <button type="button" class="map-round-btn is-navy" id="openAddRetailerBtn" title="নতুন দোকান যোগ করুন" aria-label="নতুন দোকান যোগ করুন">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
 
         <div class="search-suggest-box" id="retailerSuggestBox" role="listbox" aria-label="দোকানের সাজেশন" hidden></div>
@@ -56,6 +55,7 @@
 
     <!-- Bottom Sheet: Nearby Retailers -->
     <section class="nearby-sheet" id="nearbySheet" aria-label="কাছাকাছি দোকান">
+        <span class="nearby-handle" aria-hidden="true"></span>
         <div class="nearby-sheet-head">
             <div class="nearby-title-wrap">
                 <h2 class="section-title" id="nearbySheetTitle">কাছের দোকান</h2>
@@ -135,12 +135,12 @@
     <div class="modal-panel modal-tall rp-modal-panel" role="dialog" aria-modal="true" aria-labelledby="rpRetailerName">
         <div class="modal-head rp-modal-head">
             <div class="modal-head-left">
-                <button type="button" class="icon-btn icon-btn-round" data-close-modal="retailerProductsModal" aria-label="ম্যাপে ফিরুন">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m15 18-6-6 6-6"/></svg>
+                <button type="button" class="sky-btn" data-close-modal="retailerProductsModal" aria-label="ম্যাপে ফিরুন">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
                 </button>
-                <div>
-                    <h2 id="rpRetailerName" class="section-title rp-shop-title">পণ্য নির্বাচন করুন</h2>
+                <div class="rp-head-t">
                     <p id="rpRetailerSub" class="section-subtitle"></p>
+                    <h2 id="rpRetailerName" class="section-title rp-shop-title">পণ্য নির্বাচন করুন</h2>
                 </div>
             </div>
             <div class="rp-view-switch" role="group" aria-label="দেখার ধরন">
@@ -165,20 +165,23 @@
             <div class="search-suggest-box" id="rpProductSuggestBox" role="listbox" aria-label="পণ্যের সাজেশন" hidden></div>
         </div>
 
+        <div class="rp-cats" id="rpCatRail" role="tablist" aria-label="ক্যাটাগরি" hidden></div>
+
         <div class="modal-body rp-body">
             <div class="sr-products-grid" id="srProductsGrid"></div>
         </div>
 
         <!-- Sticky Bottom Total + Send Order Bar -->
         <div class="rp-bottom-bar" id="floatingCartWrap">
+            <span class="rp-cart-ic" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                <span class="rp-cart-n tabular" id="rpCartCount" hidden>০</span>
+            </span>
             <div class="rp-bottom-left">
-                <span class="rp-bottom-label">মোট</span>
-                <div class="rp-bottom-val-row">
-                    <strong class="rp-bottom-total tabular" id="rpCartTotal">৳ ০</strong>
-                    <span class="rp-bottom-badge tabular" id="cartFloatBadge" hidden>০টি</span>
-                </div>
+                <span class="rp-bottom-badge tabular" id="cartFloatBadge">কোনো পণ্য নেই</span>
+                <strong class="rp-bottom-total tabular" id="rpCartTotal">৳ ০</strong>
             </div>
-            <button type="button" class="btn btn-cobalt rp-send-btn" id="openCartReviewBtn" disabled>অর্ডার পাঠান</button>
+            <button type="button" class="btn rp-send-btn" id="openCartReviewBtn" disabled>অর্ডার পাঠান <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
         </div>
     </div>
 </div>
@@ -349,18 +352,7 @@
                     <span id="osReceiptSr">SR: <?= e($currentSr['name'] ?? '') ?> · <?= e($currentSr['company'] ?? '') ?></span>
                 </div>
 
-                <div class="os-memo-table-wrap">
-                    <table class="data-table os-items-table">
-                        <thead>
-                            <tr>
-                                <th>বিবরণ</th>
-                                <th class="text-center">পরিমাণ</th>
-                                <th class="text-right">টাকা</th>
-                            </tr>
-                        </thead>
-                        <tbody id="osItemsBody"></tbody>
-                    </table>
-                </div>
+                <div class="os-list" id="osItemsBody"></div>
 
                 <div class="os-memo-footer">
                     <div>
@@ -369,6 +361,12 @@
                     </div>
                     <strong class="os-memo-grand tabular" id="osTotalCost">৳ ০</strong>
                 </div>
+            </div>
+
+            <div class="oc-strip" id="osOcStrip">
+                <div><span>ওভার</span><strong class="tabular is-blue" id="osOver">+৳ ০</strong></div>
+                <div><span>কমিশন</span><strong class="tabular is-red" id="osComm">−৳ ০</strong></div>
+                <div><span>নিট</span><strong class="tabular" id="osNet">৳ ০</strong></div>
             </div>
         </div>
 

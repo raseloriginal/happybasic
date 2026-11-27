@@ -6,6 +6,7 @@ import '../core/offline.dart';
 import '../core/printer.dart';
 import '../core/tracker.dart';
 import '../ui/common.dart';
+import '../ui/dkit.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
@@ -127,9 +128,9 @@ class _ReadySalePageState extends State<ReadySalePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('রেডি সেল')),
-      body: Column(children: [
+    return DPage(
+      title: 'রেডি সেল',
+      child: Column(children: [
         Expanded(
           child: ListView(padding: const EdgeInsets.all(14), children: [
             SegmentedButton<bool>(

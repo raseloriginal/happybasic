@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/format.dart';
 import '../ui/common.dart';
+import '../ui/hkit.dart';
 import '../ui/pwa_kit.dart';
-import 'rkit.dart';
+import 'invoice_page.dart';
+import 'retailer_home.dart' show icTruck;
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
-/// /retailer/notifications — grouped by day, unread rows highlighted with a blue dot.
+/// R4 · নোটিফিকেশন: SR orders / delivery-man news, unread dots, seen 1.5s after opening.
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
   @override
@@ -19,11 +21,11 @@ class NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<NotificationsPage> {
   Timer? _seen;
+  int? _tab;
 
   @override
   void initState() {
     super.initState();
-    // The PWA marks everything as read 1.5 s after the page is shown.
     _seen = Timer(const Duration(milliseconds: 1500), () => ApiClient.send('POST', '/retailer/notifications/seen').catchError((_) => <String, dynamic>{}));
   }
 
@@ -33,45 +35,74 @@ class _NotificationsPageState extends State<NotificationsPage> {
     super.dispose();
   }
 
-  static const _tints = [
-    (Color(0xFFFFE4CC), Color(0xFFC2570C), Color(0xFFF08C1A)), // orange
-    (Color(0xFFDBE7FF), Color(0xFF1D4FD0), Color(0xFF2563EB)), // blue
-    (Color(0xFFECE4D6), Color(0xFF7A5A37), Color(0xFF7A5A37)), // brown
-  ];
+  Future<void> _open(Map<String, dynamic> e) async {
+    final date = '${e['date'] ?? ''}';
+    if (date.isEmpty) return;
+    final res = await busy(context, () => ApiClient.get('/retailer/day', query: {'date': date}));
+    if (res == null || !mounted) return;
+    final orders = (res['orders'] as List).map(_m).toList();
+    final sel = e['order_id'] != null ? int0(e['order_id']) : (orders.isEmpty ? 0 : int0(orders.first['id']));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => InvoicePage(
+        mode: e['kind'] == 'arrived' ? InvoiceMode.delivery : InvoiceMode.order, date: date, orders: orders, selectedId: sel)));
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: RC.outer,
-      body: Frame(
-        child: Container(
-          color: RC.bg,
-          child: AsyncBody(
-            padding: EdgeInsets.zero,
-            load: () => loadCached('ret_notif', () => ApiClient.get('/retailer/notifications')),
-            builder: (context, d, reload) {
-              final events = (d['events'] as List).map(_m).toList();
-              final unread = int0(d['unread']);
-              final out = <Widget>[];
-              String? group;
-              for (final e in events) {
-                if (e['group'] != group) {
-                  group = '${e['group']}';
-                  out.add(RSecTitle(group, muted: true));
-                }
-                out.add(_Row(e));
-              }
-              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                RPlainHead(title: 'নোটিফিকেশন', subtitle: unread > 0 ? '${bn(unread)}টি নতুন' : 'সব দেখা হয়েছে', onBack: () => Navigator.pop(context)),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 40),
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.bg,
+        body: Frame(
+          color: HC.outer,
+          child: ColoredBox(
+            color: HC.bg,
+            child: AsyncBody(
+              sky: true,
+              load: () => loadCached('ret_notif', () => ApiClient.get('/retailer/notifications')),
+              builder: (context, d, reload) {
+                final events = (d['events'] as List).map(_m).toList();
+                final orders = events.where((e) => e['kind'] == 'order').toList();
+                final dms = events.where((e) => e['kind'] != 'order').toList();
+                final unread = int0(d['unread']);
+                final tab = _tab ?? (orders.isEmpty && dms.isNotEmpty ? 1 : 0);
+                final list = tab == 0 ? orders : dms;
+                String when(Map<String, dynamic> e) => e['group'] == 'আজ' ? '${e['when']}' : '${e['group']} · ${e['when']}';
+                return SkyBox(
+                  height: 230,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    if (events.isEmpty) const REmpty('এখনো কোনো নোটিফিকেশন নেই'),
-                    ...out,
+                    SkyHead(leading: const SkyBack(), kicker: unread > 0 ? '${bn(unread)}টি নতুন' : 'সব দেখা হয়েছে', title: 'নোটিফিকেশন'),
+                    gap12,
+                    HSeg(
+                      items: const ['SR অর্ডার', 'ডেলিভারি ম্যান'], index: tab, onTap: (i) => setState(() => _tab = i),
+                      badges: [orders.where((e) => e['unread'] == true).length, dms.where((e) => e['unread'] == true).length],
+                    ),
+                    gap12,
+                    HCard(
+                      lift: true, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: list.isEmpty
+                          ? Padding(padding: const EdgeInsets.symmetric(vertical: 18),
+                              child: Text(tab == 0 ? 'এখনো কোনো অর্ডার নেই' : 'এখনো কোনো ডেলিভারির খবর নেই', textAlign: TextAlign.center, style: hs(13, color: HC.muted)))
+                          : Column(children: [
+                              for (var i = 0; i < list.length; i++)
+                                Container(
+                                  decoration: BoxDecoration(border: i == 0 ? null : const Border(top: BorderSide(color: HC.line))),
+                                  child: _Row(e: list[i], when: when(list[i]), onTap: () => _open(list[i])),
+                                ),
+                            ]),
+                    ),
+                    gap12,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFC9D4EA), width: 1.5)),
+                      child: Row(children: [
+                        Text('%', style: hs(16, w: w7, color: HC.blue)),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text('কোম্পানির অফার শীঘ্রই এখানে আসবে', style: hs(13, color: HC.muted))),
+                      ]),
+                    ),
                   ]),
-                ),
-              ]);
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -80,67 +111,48 @@ class _NotificationsPageState extends State<NotificationsPage> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row(this.e);
+  const _Row({required this.e, required this.when, required this.onTap});
   final Map<String, dynamic> e;
+  final String when;
+  final VoidCallback onTap;
+  static const _tints = [Color(0xFF5B4FE0), Color(0xFF1F4FE0), Color(0xFF1E8FE0), Color(0xFF475273)];
 
   @override
   Widget build(BuildContext context) {
-    final kind = '${e['kind']}';
     final unread = e['unread'] == true;
+    final kind = '${e['kind']}';
     Widget lead;
-    Widget body;
     if (kind == 'order') {
-      final company = '${e['company'] ?? ''}';
-      final t = _NotificationsPageState._tints[company.hashCode.abs() % 3];
-      lead = SizedBox(
-        width: 54, height: 62,
-        child: Stack(clipBehavior: Clip.none, alignment: Alignment.topCenter, children: [
-          Container(
-            width: 54, height: 54,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: t.$1, border: Border.all(color: t.$3, width: 3)),
-            child: Center(child: Text('${e['initial'] ?? ''}', style: ts(22, w: FontWeight.w700, color: t.$2, h: 1))),
-          ),
-          Positioned(
-            bottom: 0,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 70), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-              decoration: BoxDecoration(color: t.$3, borderRadius: BorderRadius.circular(99)),
-              child: Text(company.length > 7 ? company.substring(0, 7) : company, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(11, w: FontWeight.w700, color: Colors.white, h: 1.3)),
-            ),
-          ),
-        ]),
-      );
-      body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${e['title']}', style: ts(15, w: FontWeight.w700, h: 1.35)),
-        Text('${e['sub'] ?? ''}', style: ts(15, h: 1.4)),
-        Text('${e['when']}', style: ts(14, color: RC.muted, h: 1.4)),
-      ]);
+      final tint = _tints['${e['company']}'.codeUnits.fold<int>(0, (a, c) => a + c) % _tints.length];
+      lead = LetterAvatar('${e['initial'] ?? ''}', size: 44, bg: Colors.white, fg: tint, border: tint, fontSize: 17);
     } else {
-      final arrived = kind == 'arrived';
+      final done = kind == 'arrived';
       lead = Container(
-        width: 48, height: 48,
-        decoration: BoxDecoration(color: arrived ? RC.okSoft : RC.blueSoft, borderRadius: BorderRadius.circular(16)),
-        child: Center(child: Text(arrived ? '✓' : '🚚', style: ts(22, color: RC.ink, h: 1))),
+        width: 44, height: 44,
+        decoration: BoxDecoration(color: done ? HC.blue : (unread ? HC.soft : HC.bg), borderRadius: BorderRadius.circular(14)),
+        alignment: Alignment.center,
+        child: done ? const Svg('<path d="M5 12l5 5 9-10"/>', size: 20, color: Colors.white, stroke: 2.6) : Svg(icTruck, size: 20, color: unread ? HC.blue : HC.muted),
       );
-      body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${e['title']}', style: ts(15, w: FontWeight.w700, h: 1.35)),
-        Text('${e['when']}', style: ts(14, color: RC.muted, h: 1.4)),
-      ]);
     }
-    return RCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      child: DecoratedBox(
-        decoration: const BoxDecoration(),
-        child: Container(
-          decoration: unread ? const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF3F7FF), Colors.white], stops: [0, 0.6])) : null,
-          child: Row(children: [
-            lead,
-            const SizedBox(width: 14),
-            Expanded(child: body),
-            if (unread) Container(width: 12, height: 12, decoration: const BoxDecoration(color: RC.blue, shape: BoxShape.circle)),
+    final title = kind == 'order' ? '${e['title']}' : '${e['short'] ?? e['title']}';
+    final sub = kind == 'order' ? '${e['sub'] ?? ''}' : '${e['detail'] ?? ''}';
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(children: [
+          lead,
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(14, w: unread ? w7 : w6)),
+            if (sub.isNotEmpty) Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.muted, num: true)),
+          ])),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(when, style: hs(11, color: HC.muted)),
+            if (unread) ...[const SizedBox(height: 4), Container(width: 8, height: 8, decoration: const BoxDecoration(color: HC.blue, shape: BoxShape.circle))],
           ]),
-        ),
+        ]),
       ),
     );
   }

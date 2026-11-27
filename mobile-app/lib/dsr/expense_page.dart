@@ -206,8 +206,10 @@ class _ExpensePageState extends State<ExpensePage> {
               onTap: () async {
                 if (!await confirm(context, 'খরচটি মুছবেন?', danger: true, yes: 'মুছুন')) return;
                 if (!mounted) return;
-                final r = await busy(context, () => ApiClient.send('DELETE', '/dsr/expenses/${e['id']}', opId: ApiClient.newOpId()));
-                if (r != null) reload();
+                final r = await busy(context, () => OfflineQueue.write('DELETE', '/dsr/expenses/${e['id']}', label: '${e['title']} খরচ মোছা'));
+                if (r == null || !mounted) return;
+                if (r.queued) toast(context, 'ইন্টারনেট এলে মুছে যাবে।');
+                reload();
               },
               child: Container(
                 width: 28, height: 28,

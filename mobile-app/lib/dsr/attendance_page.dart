@@ -12,7 +12,9 @@ Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map
 
 /// Arrival attendance: scan the partner's godown QR; the phone's location is checked against the godown.
 class AttendancePage extends StatefulWidget {
-  const AttendancePage({super.key});
+  const AttendancePage({super.key, this.scan = false});
+  /// Open straight into the QR scanner and close after a successful check-in.
+  final bool scan;
   @override
   State<AttendancePage> createState() => _AttendancePageState();
 }
@@ -20,7 +22,7 @@ class AttendancePage extends StatefulWidget {
 class _AttendancePageState extends State<AttendancePage> {
   final MobileScannerController _cam = MobileScannerController(formats: const [BarcodeFormat.qrCode]);
   final GlobalKey<AsyncBodyState> _body = GlobalKey();
-  bool _scanning = false;
+  late bool _scanning = widget.scan;
   bool _handling = false;
   String? _date;
 
@@ -57,6 +59,10 @@ class _AttendancePageState extends State<AttendancePage> {
     _handling = false;
     if (r != null && mounted) {
       toast(context, (r['message'] ?? 'হাজিরা সম্পন্ন।').toString());
+      if (widget.scan) {
+        Navigator.pop(context, true);
+        return;
+      }
       _body.currentState?.reload();
     }
   }
@@ -74,7 +80,7 @@ class _AttendancePageState extends State<AttendancePage> {
             child: Column(children: [
               Text('গোডাউনের QR কোড ফ্রেমে ধরুন', style: ts(15, w: FontWeight.w700, color: Colors.white)),
               const SizedBox(height: 14),
-              SizedBox(width: 140, child: DBtn('বন্ধ করুন', kind: DBtnKind.secondary, height: 44, block: true, onTap: () => setState(() => _scanning = false))),
+              SizedBox(width: 140, child: DBtn('বন্ধ করুন', kind: DBtnKind.secondary, height: 44, block: true, onTap: () => widget.scan ? Navigator.pop(context) : setState(() => _scanning = false))),
             ]),
           ),
         ]),

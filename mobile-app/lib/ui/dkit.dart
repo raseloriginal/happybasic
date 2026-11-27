@@ -2,56 +2,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/format.dart';
+import 'hkit.dart';
 import 'pwa_kit.dart';
 
-/// DSR panel design tokens — copied from public/assets/dsr/css/dsr.css.
+/// DSR panel tokens — mapped onto the shared design (hkit) palette.
 class DC {
-  static const outer = Color(0xFFE9EDF2);
-  static const bg = Color(0xFFF7F8FA);
+  static const outer = HC.outer;
+  static const bg = HC.bg;
   static const surface = Colors.white;
-  static const subtle = Color(0xFFF9FAFB);
-  static const border = Color(0xFFE4E7EC);
-  static const borderStrong = Color(0xFFD0D5DD);
-  static const ink = Color(0xFF0F172A);
-  static const ink2 = Color(0xFF475467);
-  static const muted = Color(0xFF667085);
-  static const accent = Color(0xFF111827);
-  static const link = Color(0xFF2563EB);
-  static const ok = Color(0xFF12B76A);
-  static const okBg = Color(0xFFECFDF3);
-  static const okText = Color(0xFF027A48);
-  static const okBorder = Color(0xFFABEFC6);
-  static const infoBg = Color(0xFFEFF6FF);
-  static const infoText = Color(0xFF1D4ED8);
-  static const infoBorder = Color(0xFFBFDBFE);
-  static const warn = Color(0xFFF79009);
-  static const warnBg = Color(0xFFFFFAEB);
+  static const subtle = HC.bg;
+  static const border = HC.line;
+  static const borderStrong = HC.line2;
+  static const ink = HC.ink;
+  static const ink2 = HC.ink2;
+  static const muted = HC.muted;
+  static const accent = HC.ink;
+  static const link = HC.blue;
+  static const ok = HC.blue;
+  static const okBg = HC.soft;
+  static const okText = HC.blue;
+  static const okBorder = Color(0xFFC9D6FF);
+  static const infoBg = HC.soft;
+  static const infoText = HC.blue;
+  static const infoBorder = Color(0xFFC9D6FF);
+  static const warn = Color(0xFFB54708);
+  static const warnBg = Color(0xFFFFF6E5);
   static const warnText = Color(0xFFB54708);
-  static const warnBorder = Color(0xFFFEDF89);
-  static const danger = Color(0xFFD92D20);
-  static const dangerBg = Color(0xFFFEF3F2);
-  static const dangerText = Color(0xFFB42318);
-  static const dangerBorder = Color(0xFFFECDCA);
-  static const track = Color(0xFFEEF2F6);
+  static const warnBorder = Color(0xFFFDE3B5);
+  static const danger = HC.red;
+  static const dangerBg = HC.redSoft;
+  static const dangerText = HC.red;
+  static const dangerBorder = Color(0xFFF8C9C4);
+  static const track = HC.chip;
 }
 
-/// `.card`: white, 1px border, radius 12, padding 15.
+/// Text in the design font (keeps the old `ts` call shape for DSR pages).
+TextStyle dts(double size, {FontWeight w = FontWeight.w400, Color color = HC.ink, double h = 1.35, double? ls, bool tabular = false}) =>
+    hs(size, w: w, color: color, h: h, ls: ls, num: tabular);
+
+/// White card, radius 20, hairline border.
 class DCard extends StatelessWidget {
-  const DCard({super.key, required this.child, this.padding = const EdgeInsets.all(15), this.margin = EdgeInsets.zero, this.onTap});
+  const DCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.margin = EdgeInsets.zero, this.onTap});
   final Widget child;
   final EdgeInsets padding, margin;
   final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) {
-    Widget inner = Padding(padding: padding, child: child);
-    if (onTap != null) inner = Material(color: Colors.transparent, child: InkWell(borderRadius: BorderRadius.circular(12), onTap: onTap, child: inner));
-    return Container(
-      margin: margin,
-      decoration: BoxDecoration(color: DC.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: DC.border)),
-      clipBehavior: onTap != null ? Clip.antiAlias : Clip.none,
-      child: inner,
-    );
-  }
+  Widget build(BuildContext context) => HCard(padding: padding, margin: margin, onTap: onTap, radius: 20, child: child);
 }
 
 enum DTone { success, info, warning, danger, neutral }
@@ -62,24 +58,19 @@ class DBadge extends StatelessWidget {
   final DTone tone;
   @override
   Widget build(BuildContext context) {
-    final (bg, fg, bd) = switch (tone) {
-      DTone.success => (DC.okBg, DC.okText, DC.okBorder),
-      DTone.info => (DC.infoBg, DC.infoText, DC.infoBorder),
-      DTone.warning => (DC.warnBg, DC.warnText, DC.warnBorder),
-      DTone.danger => (DC.dangerBg, DC.dangerText, DC.dangerBorder),
-      DTone.neutral => (DC.subtle, DC.ink2, DC.border),
+    final (bg, fg) = switch (tone) {
+      DTone.success || DTone.info => (HC.soft, HC.blue),
+      DTone.warning => (DC.warnBg, DC.warnText),
+      DTone.danger => (HC.redSoft, HC.red),
+      DTone.neutral => (HC.chip, HC.ink2),
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99), border: Border.all(color: bd)),
-      child: Text(text, style: ts(11, w: FontWeight.w600, color: fg, h: 1.45)),
-    );
+    return HChip(text, bg: bg, fg: fg, size: 11.5);
   }
 }
 
 enum DBtnKind { primary, secondary, ghost, danger, dangerOutline }
 
-/// `.btn` (radius 8, 13px / 600, black primary).
+/// Rounded button in the design style (navy primary, outlined secondary, red danger).
 class DBtn extends StatelessWidget {
   const DBtn(this.label, {super.key, this.onTap, this.kind = DBtnKind.primary, this.icon, this.small = false, this.block = false, this.height});
   final String label;
@@ -91,25 +82,33 @@ class DBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (bg, fg, bd) = switch (kind) {
-      DBtnKind.primary => (DC.accent, Colors.white, DC.accent),
-      DBtnKind.secondary => (DC.surface, DC.ink, DC.borderStrong),
-      DBtnKind.ghost => (Colors.transparent, DC.ink2, DC.border),
-      DBtnKind.danger => (DC.danger, Colors.white, DC.danger),
-      DBtnKind.dangerOutline => (DC.dangerBg, DC.dangerText, DC.dangerBorder),
+      DBtnKind.primary => (HC.ink, Colors.white, HC.ink),
+      DBtnKind.secondary => (Colors.white, HC.ink, HC.line2),
+      DBtnKind.ghost => (Colors.transparent, HC.ink2, HC.line),
+      DBtnKind.danger => (HC.red, Colors.white, HC.red),
+      DBtnKind.dangerOutline => (HC.redSoft, HC.red, HC.redSoft),
     };
-    return Opacity(
-      opacity: onTap == null ? 0.55 : 1,
-      child: Material(
-        color: bg, borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8), onTap: onTap,
-          child: Container(
-            height: height, padding: EdgeInsets.symmetric(horizontal: small ? 11 : 14, vertical: height != null ? 0 : (small ? 6 : 8)),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: bd)),
-            child: Row(mainAxisSize: block ? MainAxisSize.max : MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-              if (icon != null) ...[icon!, const SizedBox(width: 6)],
-              Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(small ? 12.5 : 13, w: FontWeight.w600, color: fg, h: 1.3))),
-            ]),
+    final r = BorderRadius.circular(small ? 12 : 14);
+    return Semantics(
+      button: true, enabled: onTap != null,
+      child: Opacity(
+        opacity: onTap == null ? 0.5 : 1,
+        child: Material(
+          color: bg, borderRadius: r,
+          child: InkWell(
+            borderRadius: r,
+            onTap: onTap == null ? null : () {
+              HapticFeedback.lightImpact();
+              onTap!();
+            },
+            child: Container(
+              height: height ?? (small ? 38 : 46), padding: EdgeInsets.symmetric(horizontal: small ? 12 : 16),
+              decoration: BoxDecoration(borderRadius: r, border: Border.all(color: bd, width: 1.3)),
+              child: Row(mainAxisSize: block ? MainAxisSize.max : MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                if (icon != null) ...[icon!, const SizedBox(width: 6)],
+                Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(small ? 12.5 : 14, w: w7, color: fg, h: 1.2))),
+              ]),
+            ),
           ),
         ),
       ),
@@ -117,109 +116,18 @@ class DBtn extends StatelessWidget {
   }
 }
 
-/// `.section-title`
 class DSecTitle extends StatelessWidget {
   const DSecTitle(this.text, {super.key, this.sub});
   final String text;
   final String? sub;
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(text, style: ts(15, w: FontWeight.w600, ls: -0.15, h: 1.35)),
-        if (sub != null) Text(sub!, style: ts(12, color: DC.muted, h: 1.4)),
+        Text(text, style: hs(16, w: w7)),
+        if (sub != null) Text(sub!, style: hs(12, color: HC.muted)),
       ]);
 }
 
-/// `.topbar`: 54px white bar with the logo, page title, optional actions and sign-out.
-class DTopBar extends StatelessWidget {
-  const DTopBar({super.key, required this.title, this.actions = const []});
-  final String title;
-  final List<Widget> actions;
-  @override
-  Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
-      child: Container(
-        height: 54 + top, padding: EdgeInsets.fromLTRB(14, top, 14, 0),
-        decoration: const BoxDecoration(color: DC.surface, border: Border(bottom: BorderSide(color: DC.border))),
-        child: Row(children: [
-          Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(7), border: Border.all(color: DC.border)),
-            clipBehavior: Clip.antiAlias,
-            child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox()),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(16, w: FontWeight.w600, ls: -0.16, h: 1.3))),
-          ...actions,
-        ]),
-      ),
-    );
-  }
-}
-
-/// `.icon-btn` (32px, radius 8)
-class DIconBtn extends StatelessWidget {
-  const DIconBtn({super.key, required this.icon, required this.onTap, this.tooltip});
-  final String icon;
-  final VoidCallback onTap;
-  final String? tooltip;
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: 8),
-        child: Tooltip(
-          message: tooltip ?? '',
-          child: GestureDetector(
-            onTap: onTap,
-            child: Container(
-              width: 32, height: 32,
-              decoration: BoxDecoration(color: DC.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: DC.border)),
-              child: Center(child: Svg(icon, size: 17, color: DC.ink2)),
-            ),
-          ),
-        ),
-      );
-}
-
-/// Bottom navigation (5 items, icon + label).
-class DBottomNav extends StatelessWidget {
-  const DBottomNav({super.key, required this.index, required this.onTap});
-  final int index;
-  final ValueChanged<int> onTap;
-
-  static const items = [
-    (label: 'ড্যাশবোর্ড', icon: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
-    (label: 'ডেলিভারি', icon: '<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>'),
-    (label: 'ভ্যান স্টক', icon: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'),
-    (label: 'সেটেলমেন্ট', icon: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>'),
-    (label: 'খরচ', icon: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/>'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).padding.bottom;
-    return Container(
-      height: 60 + bottom, padding: EdgeInsets.only(bottom: bottom),
-      decoration: const BoxDecoration(color: DC.surface, border: Border(top: BorderSide(color: DC.border))),
-      child: Row(children: [
-        for (var i = 0; i < items.length; i++)
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onTap(i),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Svg(items[i].icon, size: 19, color: index == i ? DC.accent : DC.muted, stroke: index == i ? 2.25 : 1.8),
-                const SizedBox(height: 3),
-                Text(items[i].label, maxLines: 1, style: ts(10.5, w: index == i ? FontWeight.w600 : FontWeight.w500, color: index == i ? DC.accent : DC.muted, h: 1.3)),
-              ]),
-            ),
-          ),
-      ]),
-    );
-  }
-}
-
-/// `.page-date-nav`: pill with ‹ date › and an "আজ" shortcut.
+/// Date pill: ‹ date › and an "আজ" shortcut.
 class DDateNav extends StatelessWidget {
   const DDateNav({super.key, required this.date, required this.onChange, this.subText, this.shadow = true});
   final String date;
@@ -229,15 +137,18 @@ class DDateNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final today = todayYmd();
-    Widget arrow(String t, VoidCallback onTap) => GestureDetector(
-          onTap: onTap, behavior: HitTestBehavior.opaque,
-          child: SizedBox(width: 32, height: 34, child: Center(child: Text(t, style: ts(18, w: FontWeight.w700, h: 1)))),
+    Widget arrow(String t, String label, VoidCallback onTap) => Semantics(
+          button: true, label: label,
+          child: GestureDetector(
+            onTap: onTap, behavior: HitTestBehavior.opaque,
+            child: SizedBox(width: 44, height: 44, child: Center(child: Text(t, style: hs(22, w: w6, h: 1)))),
+          ),
         );
     return Container(
-      height: shadow ? 42 : 40, padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(color: DC.surface, borderRadius: BorderRadius.circular(99), border: Border.all(color: DC.border), boxShadow: const [BoxShadow(color: Color(0x140F172A), blurRadius: 12, offset: Offset(0, 4))]),
+      height: 52, padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: HC.line), boxShadow: shadow ? HC.liftSm : null),
       child: Row(children: [
-        arrow('‹', () => onChange(addDays(date, -1))),
+        arrow('‹', 'আগের দিন', () => onChange(addDays(date, -1))),
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -245,26 +156,20 @@ class DDateNav extends StatelessWidget {
               final d = await showDatePicker(context: context, initialDate: DateTime.parse(date), firstDate: DateTime(2024), lastDate: DateTime.now().add(const Duration(days: 1)));
               if (d != null) onChange(ymd(d));
             },
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Svg('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', size: 14, color: Color(0xFF1D4ED8)),
-              const SizedBox(width: 7),
-              Flexible(
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(dateBn(date), maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(12, w: FontWeight.w800, h: 1.15, tabular: true)),
-                  if (subText != null || date == today) Text(subText ?? 'আজ', maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(10, w: FontWeight.w600, color: DC.muted, h: 1.15, tabular: true)),
-                ]),
-              ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text('${date == today ? 'আজ, ' : ''}${dateBn(date)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14, w: w7, h: 1.2, num: true)),
+              if (subText != null) Text(subText!, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(11, color: HC.muted, h: 1.2, num: true)),
             ]),
           ),
         ),
-        arrow('›', () => onChange(addDays(date, 1))),
+        arrow('›', 'পরের দিন', () => onChange(addDays(date, 1))),
         if (date != today)
           GestureDetector(
             onTap: () => onChange(today),
             child: Container(
-              height: 34, padding: const EdgeInsets.symmetric(horizontal: 12), alignment: Alignment.center,
-              decoration: BoxDecoration(color: const Color(0xFF1D4ED8), borderRadius: BorderRadius.circular(99)),
-              child: Text('আজ', style: ts(12, w: FontWeight.w700, color: Colors.white, h: 1.2)),
+              height: 40, padding: const EdgeInsets.symmetric(horizontal: 14), alignment: Alignment.center,
+              decoration: BoxDecoration(color: HC.ink, borderRadius: BorderRadius.circular(14)),
+              child: Text('আজ', style: hs(13, w: w7, color: Colors.white, h: 1.2)),
             ),
           ),
       ]),
@@ -272,60 +177,87 @@ class DDateNav extends StatelessWidget {
   }
 }
 
-/// `.trip-state-banner`
+/// Round 40px icon button (sheet close etc.).
+class DIconBtn extends StatelessWidget {
+  const DIconBtn({super.key, required this.icon, required this.onTap, this.tooltip});
+  final String icon;
+  final VoidCallback onTap;
+  final String? tooltip;
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true, label: tooltip ?? 'বন্ধ করুন',
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 40, height: 40, margin: const EdgeInsets.only(left: 8),
+            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: HC.line)),
+            child: Center(child: Svg(icon, size: 16, color: HC.ink, stroke: 2.2)),
+          ),
+        ),
+      );
+}
+
+/// Trip state note (submitted / returned).
 class DBanner extends StatelessWidget {
   const DBanner(this.text, {super.key, this.returned = false, this.muted = false});
   final String text;
   final bool returned, muted;
   @override
   Widget build(BuildContext context) {
-    final (bg, fg, bd) = returned ? (DC.dangerBg, DC.dangerText, DC.dangerBorder) : (muted ? (const Color(0xF2FFFFFF), DC.ink2, DC.borderStrong) : (DC.warnBg, DC.warnText, DC.warnBorder));
+    final (bg, fg) = returned ? (HC.redSoft, HC.red) : (muted ? (Colors.white, HC.ink2) : (DC.warnBg, DC.warnText));
     return Container(
-      width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: bd)),
-      child: Text(text, style: ts(12.5, w: FontWeight.w600, color: fg, h: 1.4)),
+      width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16), border: muted ? Border.all(color: HC.line) : null),
+      child: Text(text, style: hs(13, w: w6, color: fg, h: 1.45)),
     );
   }
 }
 
-/// `.progress-track` / `.progress-fill`
 class DProgress extends StatelessWidget {
-  const DProgress(this.pct, {super.key, this.complete = false});
+  const DProgress(this.pct, {super.key, this.complete = false, this.onSky = false});
   final double pct;
-  final bool complete;
+  final bool complete, onSky;
   @override
   Widget build(BuildContext context) => ClipRRect(
         borderRadius: BorderRadius.circular(99),
-        child: Container(height: 10, color: DC.track, alignment: Alignment.centerLeft, child: FractionallySizedBox(widthFactor: (pct / 100).clamp(0, 1), child: Container(color: complete ? DC.ok : DC.accent))),
+        child: Container(
+          height: 8, color: onSky ? const Color(0x33FFFFFF) : HC.chip, alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(widthFactor: (pct / 100).clamp(0, 1), child: Container(color: onSky ? Colors.white : (complete ? HC.blue : HC.ink))),
+        ),
       );
 }
 
-/// Page shell for DSR sub-pages that are pushed on top of the tabs: top bar with a back arrow + body on the DSR background.
+/// Pushed DSR page: sky header (back, kicker, title) with the body sliding up over its curved edge.
 class DPage extends StatelessWidget {
-  const DPage({super.key, required this.title, required this.child, this.actions = const []});
+  const DPage({super.key, required this.title, required this.child, this.actions = const [], this.kicker});
   final String title;
+  final String? kicker;
   final Widget child;
   final List<Widget> actions;
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    return Scaffold(
-      backgroundColor: DC.outer,
-      body: Frame(
-        child: ColoredBox(
-          color: DC.bg,
-          child: Column(children: [
-            Container(
-              height: 54 + top, padding: EdgeInsets.fromLTRB(8, top, 14, 0),
-              decoration: const BoxDecoration(color: DC.surface, border: Border(bottom: BorderSide(color: DC.border))),
-              child: Row(children: [
-                IconButton(onPressed: () => Navigator.maybePop(context), icon: const Svg('<path d="m15 18-6-6 6-6"/>', size: 22, color: DC.ink, stroke: 2.2)),
-                Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(16, w: FontWeight.w600, ls: -0.16))),
-                ...actions,
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.outer,
+        body: Frame(
+          color: HC.outer,
+          child: ColoredBox(
+            color: HC.bg,
+            child: Stack(children: [
+              Positioned(left: 0, right: 0, top: 0, height: 112 + top, child: const CustomPaint(painter: SkyPainter())),
+              Column(children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(18, top + 12, 18, 14),
+                  child: SkyHead(
+                    leading: const SkyBack(), kicker: kicker, title: title,
+                    trailing: actions.isEmpty ? null : Row(mainAxisSize: MainAxisSize.min, children: actions),
+                  ),
+                ),
+                Expanded(child: child),
               ]),
-            ),
-            Expanded(child: child),
-          ]),
+            ]),
+          ),
         ),
       ),
     );

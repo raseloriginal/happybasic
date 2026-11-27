@@ -50,9 +50,17 @@
         return;
     }
 
-    // ---- Notifications: mark as seen after the page has been shown ----
+    // ---- Notifications: SR / DM switch; mark as seen after the page has been shown ----
     const seen = document.querySelector('[data-mark-seen]');
     if (seen) setTimeout(() => post(seen.dataset.markSeen).catch(() => {}), 1500);
+    document.querySelectorAll('[data-ntab]').forEach((b) => b.addEventListener('click', () => {
+        document.querySelectorAll('[data-ntab]').forEach((x) => { const on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+        document.querySelectorAll('[data-npanel]').forEach((p) => { p.hidden = p.dataset.npanel !== b.dataset.ntab; });
+    }));
+
+    // ---- Invoice buttons ----
+    document.querySelector('[data-share]')?.addEventListener('click', () => window.print());
+    document.querySelector('[data-report]')?.addEventListener('click', () => alert('সমস্যা জানাতে আপনার ডেলিভারি ম্যান বা SR-কে ফোন করুন।'));
 
     // ---- Invoices ----
     const dataEl = document.getElementById('invData');
@@ -63,6 +71,9 @@
     const D = JSON.parse(dataEl.textContent);
     const mode = document.body.dataset.mode; // 'order' | 'delivery'
     const orders = D.orders;
+    const sub = document.getElementById('invSub');
+    const profitCard = document.getElementById('invProfit');
+    const signed = (n) => (n < 0 ? '−৳' : '+৳') + num(Math.abs(n));
     if (!orders.length) {
         tabs.hidden = true;
         card.outerHTML = '<div class="card empty"><b>এই দিনে কোনো ইনভয়েস নেই</b></div>';
@@ -71,72 +82,66 @@
     }
 
     const orderInvoice = (o) => {
-        const rows = o.items.map((it, n) =>
-            `<div class="itrow"><span class="n">${bn(n + 1)}</span><div class="nm"><b>${esc(it.name)}</b>` +
-            `<small>${num(it.pcs)} পিস × ${money(it.rate)}${it.mrp != null ? ' · MRP ' + money(it.mrp) : ''}</small></div>` +
-            `<div class="rt"><b>${money(it.amount)}</b>${it.gain != null ? `<span class="gain">+${money(it.gain)}</span>` : ''}</div></div>`).join('');
+        const rows = o.items.map((it) =>
+            `<div class="tr"><span class="nm"><b>${esc(it.name)}</b>${it.mrp != null ? `<small>MRP ${money(it.mrp)}</small>` : ''}</span>` +
+            `<span>${num(it.pcs)}</span><span>${money(it.rate)}</span>` +
+            `<span class="amt"><b>${money(it.amount)}</b>${it.gain != null ? `<span class="gain">${signed(it.gain)}</span>` : ''}</span></div>`).join('');
+        const people = [o.company, o.sr === 'রেডি সেল' ? 'রেডি সেল' : 'SR ' + o.sr, o.dm ? 'DM ' + o.dm : ''].filter(Boolean).map(esc).join(' · ');
         return `
-            <div class="inv-brand"><span class="logo-sq"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 5v14M18 5v14M6 12h12"/></svg></span>
-                <div><h2>Happy Bangladesh</h2><p>${esc([o.partner.name, o.partner.phone].filter(Boolean).join(' · '))}</p></div>
-                <div class="inv-title"><b>INVOICE</b><span class="badge badge-${o.tone}">${esc(o.status)}</span></div></div>
-            <div class="inv-meta"><div class="bill-to"><small>বিল টু</small><b>${esc(o.shop.name)}</b><span>${esc(o.shop.address)}</span><span>${esc(o.shop.phone)}</span></div>
-                <div class="meta-kv"><div><span>ইনভয়েস নং</span><b>${o.code}</b></div><div><span>তারিখ</span><span>${esc(D.dateLabel)}</span></div>
-                <div><span>কোম্পানি</span><span>${esc(o.company)}</span></div><div><span>SR</span><span>${esc(o.sr)}</span></div>
-                <div><span>ডেলিভারি</span><span>${esc(o.dm || '—')}</span></div></div></div>
-            <div class="itlist">${rows}</div>
-            <div class="inv-totals"><div class="tot"><span>সাবটোটাল</span><span>${money(o.subtotal)}</span></div>
-                <div class="tot"><span>${o.damage > 0 ? 'ড্যামেজ কর্তন' : 'ছাড়'}</span><span>${money(o.damage)}</span></div>
-                <div class="tot grand"><b>মোট</b><b>${money(o.total)}</b></div>
-                ${o.paid > 0 ? `<div class="tot"><span>নগদ পরিশোধ</span><span>${money(o.paid)}</span></div>` : ''}
-                ${o.due > 0 ? `<div class="tot"><span>বাকি</span><span>${money(o.due)}</span></div>` : ''}
-                ${o.profit != null ? `<div class="profit"><div><b>আপনার লাভ</b><small>সব MRP-তে বেচলে</small></div><strong>+${money(o.profit)}</strong></div>` : ''}</div>
-            <p class="words">কথায়: ${esc(o.words)}</p>
-            <div class="sigs"><div>গ্রাহকের স্বাক্ষর</div><div>ডেলিভারি ম্যান</div></div>
-            <p class="fine">মাল বুঝে নিয়ে স্বাক্ষর করুন · নষ্ট বা কম হলে ২৪ ঘণ্টার মধ্যে জানান · ধন্যবাদ</p>`;
+            <div class="iv-top"><div><b class="iv-brand">Happy Bangladesh</b><small>${esc([o.partner.name, o.partner.address].filter(Boolean).join(' · '))}</small></div>
+                <div class="iv-word"><b>INVOICE</b><span class="badge badge-${esc(o.tone)}">${esc(o.status)}</span></div></div>
+            <div class="iv-meta"><span>বিল টু<br><b class="shop">${esc(o.shop.name)}</b>${o.shop.address ? '<br>' + esc(o.shop.address) : ''}</span>
+                <span>ইনভয়েস নং <b>${esc(o.code)}</b><br>তারিখ <b>${esc(D.dateLabel)}</b><br>${people}</span></div>
+            <div class="tbl"><div class="tr th"><span>বিবরণ</span><span>পিস</span><span>দর</span><span>টাকা · লাভ</span></div>${rows}</div>
+            <div class="tots">
+                ${o.damage > 0 ? `<div><span>সাবটোটাল</span><b>${money(o.subtotal)}</b></div><div><span>ড্যামেজ কর্তন</span><b>−${money(o.damage)}</b></div>` : ''}
+                <div><span>মোট</span><b class="big">${money(o.total)}</b></div>
+                ${o.paid > 0 ? `<div><span>নগদ পরিশোধ</span><b>${money(o.paid)}</b></div>` : ''}
+                ${o.due > 0 ? `<div><span>বাকি</span><b class="red">${money(o.due)}</b></div>` : ''}</div>
+            ${o.profit != null ? `<div class="iv-gain"><span>আপনার লাভ · সব MRP-তে বেচলে</span><b>${signed(o.profit)}</b></div>` : ''}
+            <span class="words">কথায়: ${esc(o.words)}</span>`;
     };
 
     const deliveryInvoice = (o) => {
         if (o.stage !== 'arrived') {
-            return `<div class="empty"><b>মাল এখনো আসেনি</b><p>${esc(o.status)} · ডেলিভারি ইনভয়েস মাল পৌঁছালে এখানে দেখা যাবে।</p></div>`;
+            return `<div class="not-yet"><b>মাল এখনো আসেনি</b>${esc(o.status)} · মাল পৌঁছালে ডেলিভারি ইনভয়েস এখানে দেখা যাবে।</div>`;
         }
         const rows = o.items.map((it) =>
-            `<div class="itrow"><span class="n"></span><div class="nm"><b>${esc(it.name)}</b>` +
-            `<small>${num(it.pcs)} পিস × ${money(it.rate)} কেনা${it.mrp != null ? ' · MRP ' + money(it.mrp) : ''}</small>` +
-            `${it.short > 0 ? `<small class="short">${num(it.short)}টি কম · ভ্যানে ছিল না</small>` : ''}</div>` +
-            `<div class="rt"><b>${money(it.pcs * it.rate)}</b>${it.gain != null ? `<span class="gain">লাভ ${money(it.gain)}</span>` : ''}</div></div>`).join('');
+            `<div class="tr"><span class="nm"><b>${esc(it.name)}</b>${it.short > 0 ? `<small class="short">${num(it.short)}টি কম · ভ্যানে ছিল না</small>` : ''}</span>` +
+            `<span${it.short > 0 ? ' class="short"' : ''}>${num(it.pcs)}</span><span>${num(it.rate)}</span>` +
+            `<span class="mrp">${it.mrp != null ? num(it.mrp) : '—'}</span><b class="g">${it.gain != null ? signed(it.gain) : '—'}</b></div>`).join('');
         return `
-            <div class="di-head"><div><h2>${esc(o.company)} · ${esc(o.partner.name)}</h2><p>Happy Bangladesh</p></div>
-                <div class="di-r"><h2>ডেলিভারি ইনভয়েস</h2><p>${o.code}</p></div></div>
-            <div class="kv"><span>দোকান</span><b>${esc(o.shop.name)}</b></div>
-            <div class="kv"><span>ডেলিভারি</span><span>${esc(o.dm || '—')}${o.time ? ' · ' + bn(o.time) : ''}</span></div>
-            <div class="kv"><span>তারিখ</span><span>${esc(D.dateLabel)}</span></div>
-            <div class="itlist">${rows}</div>
-            <div class="tot"><span>আমার কেনা (বিল)</span><b>${money(o.total)}</b></div>
-            ${o.mrp_total != null ? `<div class="tot"><span>MRP-তে বিক্রি করলে</span><span>${money(o.mrp_total)}</span></div>` : ''}
-            ${o.profit != null ? `<div class="tot grand"><b>আমার লাভ</b><b class="gain">${money(o.profit)}</b></div>` : ''}
-            ${o.damage > 0 ? `<div class="tot"><span>ড্যামেজ কর্তন</span><span>${money(o.damage)}</span></div>` : ''}
-            <div class="tot"><span>নগদ দিয়েছেন</span><span>${money(o.paid)}</span></div>
-            ${o.due > 0 ? `<div class="tot muted-row"><span>নোট: বাকি রইল</span><span>${money(o.due)}</span></div>` : ''}
-            <div class="otp">মাল পেয়েছেন</div>`;
+            <div class="dv-top"><span>ডেলিভারি <b>${esc(o.dm ? 'DM ' + o.dm : '—')}${o.time ? ' · ' + bn(o.time) : ''}</b></span><span>${esc(D.dateLabel)}</span></div>
+            <div class="tbl five"><div class="tr th"><span>পণ্য</span><span>পিস</span><span>কেনা</span><span>MRP</span><span>লাভ</span></div>${rows}</div>
+            <div class="tots">
+                <div><span>আমার কেনা (বিল)</span><b>${money(o.subtotal)}</b></div>
+                ${o.damage > 0 ? `<div><span>ড্যামেজ কর্তন</span><b>−${money(o.damage)}</b></div><div><span>মোট বিল</span><b>${money(o.total)}</b></div>` : ''}
+                ${o.mrp_total != null ? `<div><span>MRP-তে বিক্রি করলে</span><b>${money(o.mrp_total)}</b></div>` : ''}
+                <div><span>${o.due > 0 ? 'নগদ দিয়েছেন · বাকি রইল' : 'নগদ দিয়েছেন'}</span><b>${money(o.paid)}${o.due > 0 ? ` · <span class="red">${money(o.due)}</span>` : ''}</b></div></div>`;
     };
 
     let cur = Math.max(0, orders.findIndex((o) => o.id === D.selected));
-    const tip = document.getElementById('invTip');
-
     const render = (i) => {
         cur = i;
         const o = orders[i];
         card.innerHTML = mode === 'delivery' ? deliveryInvoice(o) : orderInvoice(o);
-        tabs.querySelectorAll('.tab').forEach((t, n) => t.classList.toggle('is-on', n === i));
-        if (tip) {
-            const show = mode === 'delivery' && o.stage === 'arrived' && o.profit_per_100 != null;
-            tip.hidden = !show;
-            if (show) tip.querySelector('[data-per100]').textContent = money(o.profit_per_100);
+        const seg = document.querySelector('[data-seg-link]');
+        if (seg) { const u = new URL(seg.href, location.href); u.searchParams.set('order', o.id); seg.href = u.toString(); }
+        tabs.querySelectorAll('.pill').forEach((t, n) => { t.classList.toggle('is-on', n === i); t.setAttribute('aria-pressed', n === i ? 'true' : 'false'); });
+        if (mode === 'delivery') {
+            if (sub) sub.textContent = [o.company, o.partner.name, o.code].filter(Boolean).join(' · ');
+            const show = o.stage === 'arrived' && o.profit != null;
+            if (profitCard) {
+                profitCard.hidden = !show;
+                if (show) {
+                    profitCard.querySelector('[data-profit]').textContent = signed(o.profit);
+                    profitCard.querySelector('[data-per100]').textContent = o.profit_per_100 != null ? signed(o.profit_per_100) : '—';
+                }
+            }
         }
     };
 
-    tabs.innerHTML = orders.map((o, i) => `<button type="button" class="tab" data-i="${i}">${esc(o.company)} · ${esc(o.sr)}</button>`).join('');
-    tabs.hidden = orders.length < 2;
-    tabs.addEventListener('click', (e) => { const b = e.target.closest('.tab'); if (b) render(+b.dataset.i); });
+    tabs.innerHTML = orders.map((o, i) => `<button type="button" class="pill" data-i="${i}">${esc(o.company)} · ${esc(o.sr)}</button>`).join('');
+    tabs.addEventListener('click', (e) => { const b = e.target.closest('.pill'); if (b) render(+b.dataset.i); });
     render(cur);
 })();

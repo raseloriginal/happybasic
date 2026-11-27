@@ -3,6 +3,7 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../core/printer.dart';
 import 'common.dart';
+import 'dkit.dart';
 
 class PrinterPage extends StatefulWidget {
   const PrinterPage({super.key});
@@ -44,9 +45,9 @@ class _PrinterPageState extends State<PrinterPage> {
   @override
   Widget build(BuildContext context) {
     final saved = PrinterService.savedMac;
-    return Scaffold(
-      appBar: AppBar(title: const Text('ব্লুটুথ প্রিন্টার')),
-      body: ListView(padding: const EdgeInsets.all(14), children: [
+    return DPage(
+      title: 'ব্লুটুথ প্রিন্টার',
+      child: ListView(padding: const EdgeInsets.all(14), children: [
         const Text('আগে ফোনের ব্লুটুথ সেটিংস থেকে প্রিন্টারটি পেয়ার করুন, তারপর এখানে বাছুন।', style: TextStyle(color: kMuted)),
         const SectionTitle('কাগজের মাপ'),
         SegmentedButton<int>(

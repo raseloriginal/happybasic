@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:happy_bangladesh/auth/login_page.dart';
+import 'package:happy_bangladesh/core/format.dart';
+import 'package:happy_bangladesh/core/offline.dart';
 import 'package:happy_bangladesh/core/tracker.dart';
 import 'package:happy_bangladesh/dsr/attendance_page.dart';
 import 'package:happy_bangladesh/dsr/dsr_home.dart';
@@ -12,11 +14,12 @@ import 'package:http/http.dart' as http;
 import 'fakes.dart';
 
 /// Every screen is built with realistic server data and used the way a field user would.
-/// A crash in any build (like a missing localization) shows up as a test exception.
+/// A crash or a layout overflow in any build shows up as a test exception.
 void fakeTest(String name, Future<void> Function(WidgetTester t) body) {
   testWidgets(name, (t) async {
     kMapTiles = false; // no network in tests
     await setupEnv();
+    await OfflineQueue.instance.clearAll();
     await http.runWithClient(() async {
       try {
         await body(t);
@@ -30,32 +33,46 @@ void fakeTest(String name, Future<void> Function(WidgetTester t) body) {
   });
 }
 
+Finder _text(String text, bool contains) => contains ? find.textContaining(text) : find.text(text);
+
 /// Taps a text, scrolling the page down first when it is further away (lists build lazily).
 /// [last] taps the last match (e.g. the bottom-nav label, or a card below a search dropdown).
-Future<void> tapText(WidgetTester t, String text, {int index = 0, bool last = false}) async {
-  final f = find.text(text);
+Future<void> tapText(WidgetTester t, String text, {int index = 0, bool last = false, bool contains = false}) async {
+  final f = _text(text, contains);
   for (var i = 0; i < 40 && f.evaluate().length <= index; i++) {
     await t.drag(find.byType(Scrollable).first, const Offset(0, -300), warnIfMissed: false);
     await t.pump(const Duration(milliseconds: 50));
   }
+  if (f.evaluate().length <= index) _dump();
   expect(f.evaluate().length > index, isTrue, reason: 'text "$text" not found on screen (even after scrolling)');
   final target = last ? f.last : f.at(index);
   await t.ensureVisible(target);
   await t.pump(const Duration(milliseconds: 200));
-  await t.tap(target);
+  await t.tap(target, warnIfMissed: false);
   await settle(t);
 }
 
+/// Taps a button found by its accessibility label (round icon buttons).
+Future<void> tapLabel(WidgetTester t, String label) async {
+  final f = find.byWidgetPredicate((w) => w is Semantics && w.properties.label == label);
+  if (f.evaluate().isEmpty) _dump();
+  expect(f, findsWidgets, reason: 'button "$label" not found');
+  await t.ensureVisible(f.first);
+  await t.pump(const Duration(milliseconds: 200));
+  await t.tap(f.first, warnIfMissed: false);
+  await settle(t);
+}
+
+void _dump() => debugPrint('VISIBLE: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data ?? (e.widget as Text).textSpan?.toPlainText()).take(80).join(' | ')}');
+
 /// Scrolls the visible page until [text] is built.
-Future<void> see(WidgetTester t, String text) async {
-  final f = find.text(text);
+Future<void> see(WidgetTester t, String text, {bool contains = false}) async {
+  final f = _text(text, contains);
   for (var i = 0; i < 40 && f.evaluate().isEmpty; i++) {
     await t.drag(find.byType(Scrollable).first, const Offset(0, -300), warnIfMissed: false);
     await t.pump(const Duration(milliseconds: 50));
   }
-  if (f.evaluate().isEmpty) {
-    debugPrint('VISIBLE: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data ?? (e.widget as Text).textSpan?.toPlainText()).take(60).join(' | ')}');
-  }
+  if (f.evaluate().isEmpty) _dump();
   expect(f, findsWidgets, reason: 'text "$text" not found on screen (even after scrolling)');
 }
 
@@ -70,6 +87,8 @@ Future<void> tab(WidgetTester t, String label) async {
   await t.tap(find.text(label).last, warnIfMissed: false);
   await settle(t);
 }
+
+bool called(String prefix) => calls.any((c) => c.startsWith(prefix));
 
 void main() {
   group('Login', () {
@@ -95,11 +114,12 @@ void main() {
   });
 
   group('SR', () {
-    fakeTest('order map: shops, search, pick products, confirm and save an order', (t) async {
+    fakeTest('SR1 dashboard → SR2 map → search → SR3 catalogue → SR3b sheet → cart → SR4 success', (t) async {
       await pumpApp(t, const SrHome());
       await settle(t);
-      await tab(t, 'অর্ডার');
-      expect(find.text('কাছের দোকান'), findsOneWidget);
+      await see(t, 'আজকের অর্ডার');
+      await tapText(t, 'নতুন অর্ডার'); // dashboard CTA opens the অর্ডার tab
+      await see(t, 'কাছের দোকান');
       expect(find.text('রাজকুমার স্টোর'), findsWidgets); // within 50 m of the phone
       expect(find.text('দোকান 3'), findsNothing); // too far — only found by search
 
@@ -107,149 +127,205 @@ void main() {
       await settle(t);
       expect(find.text('দোকান 7'), findsWidgets);
       expect(find.text('দোকান 3'), findsNothing);
-      expect(find.text('সকল এলাকা'), findsOneWidget);
-
-      await t.tap(find.text('দোকান 7').last); // the card (the search dropdown is above it)
-      await settle(t);
-      expect(find.text('Salman khan'), findsWidgets);
-      await tapText(t, 'Salman khan'); // product sheet: 1 dozen + 0 pcs by default
-      final fields = find.byType(TextField);
-      await t.enterText(fields.at(fields.evaluate().length - 4 + 1), '3'); // loose pcs field
-      await settle(t);
-      await tapText(t, 'অর্ডারে যোগ করুন');
-      expect(find.text('অর্ডার পাঠান'), findsOneWidget);
+      await tapText(t, 'অর্ডার'); // the row's order button (the tab label is last)
+      await see(t, 'সব পণ্য');
+      await see(t, 'Salman khan');
+      await tapText(t, 'Salman khan');
+      await see(t, 'অর্ডারে যোগ করুন', contains: true); // SR3b: 1 unit by default
+      await see(t, 'আমার ওভার / কমিশন');
+      await tapText(t, 'অর্ডারে যোগ করুন', contains: true);
+      await see(t, '১টি পণ্য', contains: true); // floating cart bar
       await tapText(t, 'অর্ডার পাঠান');
-      expect(find.text('অর্ডার সারাংশ'), findsOneWidget);
-      await tapText(t, 'অর্ডার কনফার্ম');
-      expect(calls.any((c) => c.startsWith('POST /sr/orders {"retailer_id":107')), isTrue);
-      expect(find.text('অর্ডার পাঠানো হয়েছে'), findsOneWidget);
-      await t.pump(const Duration(seconds: 1));
+      await see(t, 'অর্ডার দেখে নিন');
+      await tapText(t, 'অর্ডার কনফার্ম করুন');
+      expect(called('POST /sr/orders {"retailer_id":107'), isTrue);
+      await see(t, 'অর্ডার পাঠানো হয়েছে');
+      await see(t, 'মোট · ডেলিভারিতে নগদ');
+      await t.pump(const Duration(seconds: 6)); // the warning toast
       await tapText(t, 'অন্য দোকানে যান');
     });
 
-    fakeTest('editing an existing order', (t) async {
+    fakeTest('category rail filters the catalogue, list view, stock warning', (t) async {
       await pumpApp(t, const SrHome());
       await settle(t);
       await tab(t, 'অর্ডার');
-      await t.tap(find.text('রাজকুমার স্টোর').last);
+      await t.enterText(find.byType(TextField).first, 'দোকান 7');
       await settle(t);
-      expect(find.text('অর্ডার আপডেট'), findsOneWidget);
-      await tapText(t, 'অর্ডার আপডেট');
-      await tapText(t, 'অর্ডার কনফার্ম');
-      expect(calls.any((c) => c.startsWith('PUT /sr/orders/15')), isTrue);
+      await tapText(t, 'অর্ডার');
+      await see(t, 'বাংলা পণ্য');
+      await tapLabel(t, 'লিস্ট ভিউ');
+      await see(t, 'বাংলা পণ্য');
+      await tapText(t, 'বাংলা পণ্য');
+      await see(t, 'স্টকের চেয়ে বেশি', contains: true); // 1 unit of 12 > 3 in stock
+      await back(t);
+    });
+
+    fakeTest('editing an existing order sends PUT', (t) async {
+      await pumpApp(t, const SrHome());
+      await settle(t);
+      await tab(t, 'অর্ডার');
+      await tapText(t, 'এডিট');
+      await see(t, 'অর্ডার সম্পাদনা');
+      await tapText(t, 'আপডেট');
+      await tapText(t, 'অর্ডার আপডেট করুন');
+      expect(called('PUT /sr/orders/15'), isTrue);
+    });
+
+    fakeTest('offline: a new order is queued and the success page says so', (t) async {
+      overrides['POST /sr/orders'] = const NetFail();
+      await pumpApp(t, const SrHome());
+      await settle(t);
+      await tab(t, 'অর্ডার');
+      await t.enterText(find.byType(TextField).first, 'দোকান 7');
+      await settle(t);
+      await tapText(t, 'অর্ডার');
+      await tapText(t, 'Salman khan');
+      await tapText(t, 'অর্ডারে যোগ করুন', contains: true);
+      await tapText(t, 'অর্ডার পাঠান');
+      await tapText(t, 'অর্ডার কনফার্ম করুন');
+      await see(t, 'অর্ডার ফোনে সংরক্ষিত');
+      expect(OfflineQueue.instance.ops.where((o) => o.path == '/sr/orders'), hasLength(1));
+      await tapText(t, 'অন্য দোকানে যান');
     });
 
     fakeTest('complete the day from the আজ sheet', (t) async {
       await pumpApp(t, const SrHome());
       await settle(t);
       await tab(t, 'অর্ডার');
-      await t.tap(find.text('আজ').first);
-      await settle(t);
-      expect(find.text('আজকের অর্ডারসমূহ'), findsOneWidget);
+      await tapText(t, 'আজ ·', contains: true);
+      await see(t, 'আজকের অর্ডার');
       await tapText(t, 'আজকের অর্ডার সম্পন্ন করুন');
-      await tapText(t, 'সম্পন্ন করুন');
-      expect(calls.any((c) => c.startsWith('POST /sr/orders/complete')), isTrue);
+      await tapText(t, 'সম্পন্ন করুন', last: true);
+      expect(called('POST /sr/orders/complete'), isTrue);
     });
 
-    fakeTest('dashboard, history (memo detail) and profile tabs', (t) async {
+    fakeTest('SR5 history → SR6 memo (my copy) → SR6b shop copy, SR7 profile', (t) async {
       await pumpApp(t, const SrHome());
       await settle(t);
-      expect(find.textContaining('Salman khan'), findsWidgets);
-      expect(find.text('নতুন অর্ডার'), findsOneWidget);
-      expect(find.text('আজকের বিক্রি'), findsOneWidget);
       await tab(t, 'হিস্ট্রি');
-      expect(find.text('অর্ডার হিস্ট্রি'), findsOneWidget);
+      await see(t, 'অর্ডার হিস্ট্রি');
+      await see(t, 'মোট অর্ডার');
+      await see(t, 'বাতিল'); // the cancelled memo is listed with its state
       await tapText(t, 'রাজকুমার স্টোর');
-      expect(find.text('আমার কপি'), findsOneWidget);
-      await tapText(t, 'দোকানের কপি', index: 0);
-      expect(find.text('আসল মেমো'), findsOneWidget);
+      await see(t, 'আমার হিসাব · শুধু আপনি দেখবেন');
+      await see(t, 'মোট অর্ডার');
+      await tapText(t, 'দোকানের কপি');
+      await see(t, 'ক্যাশ মেমো');
+      await see(t, 'টাকা মাত্র', contains: true);
+      await see(t, 'দোকানে পাঠান');
       await back(t);
       await tab(t, 'আমি');
-      expect(find.text('অর্ডার সারাংশ'), findsOneWidget);
-      expect(find.text('সাইন আউট'), findsWidgets);
+      await see(t, 'অর্ডার সারাংশ');
+      await see(t, 'লগআউট');
     });
 
     fakeTest('new shop form', (t) async {
       await pumpApp(t, const SrHome());
       await settle(t);
       await tab(t, 'অর্ডার');
-      await tapText(t, 'নতুন দোকান');
-      expect(find.text('নতুন দোকান যোগ করুন'), findsOneWidget);
+      await tapLabel(t, 'নতুন দোকান যোগ করুন');
+      await see(t, 'নতুন দোকান');
       await t.enterText(find.byType(TextField).at(0), 'নতুন দোকান');
       await t.enterText(find.byType(TextField).at(1), 'ঠিকানা');
       await settle(t);
       await tapText(t, 'সংরক্ষণ করুন');
-      expect(calls.any((c) => c.startsWith('POST /sr/retailers')), isTrue);
+      expect(called('POST /sr/retailers'), isTrue);
     });
   });
 
   group('DSR', () {
-    fakeTest('home dashboard', (t) async {
+    fakeTest('DM1 আজ: trip progress, next shop', (t) async {
       await pumpApp(t, const DsrHome());
       await settle(t);
-      expect(find.text('মোট দোকান'), findsOneWidget);
-      expect(find.text('TRP-২৬১১২৫-০০০১'), findsOneWidget);
-      expect(find.text('ট্রিপ সেটেলমেন্ট ও নোট গণনা'), findsOneWidget);
+      await see(t, 'আজকের ডেলিভারি · ট্রিপ TRP-২৬১১২৫-০০০১');
+      await see(t, 'পরের দোকান');
+      await see(t, 'মিষ্টি ভ্যারাইটিজ স্টোর');
+      await see(t, 'টাকা নিতে হবে');
     });
 
-    fakeTest('delivery map → open a stop → save', (t) async {
+    fakeTest('DMD: সব দিলাম → payment sheet → DM4 delivered → DM7 invoice', (t) async {
       await pumpApp(t, const DsrHome());
       await settle(t);
-      await tab(t, 'ডেলিভারি');
-      expect(find.text('কাছাকাছি অর্ডার'), findsOneWidget);
-      await tapText(t, 'মিষ্টি ভ্যারাইটিজ স্টোর', last: true);
-      expect(find.textContaining('Transcom'), findsWidgets);
-      await tapText(t, 'সংরক্ষণ'); // footer button
-      await tapText(t, 'সংরক্ষণ', index: 1); // confirm dialog
-      expect(calls.any((c) => c.startsWith('POST /dsr/stops/188')), isTrue);
-    });
-
-    fakeTest('cancel an order inside a stop', (t) async {
-      await pumpApp(t, const DsrHome());
-      await settle(t);
-      await tab(t, 'ডেলিভারি');
-      await tapText(t, 'মিষ্টি ভ্যারাইটিজ স্টোর', last: true);
-      await tapText(t, 'এই অর্ডার বাতিল');
-      expect(find.text('বাতিলের কারণ'), findsOneWidget);
-      await tapText(t, 'নিশ্চিত');
-      expect(find.text('বাতিল'), findsWidgets);
-    });
-
-    fakeTest('ready sale page and the stop\'s damage page open', (t) async {
-      await pumpApp(t, const DsrHome());
-      await settle(t);
-      await tab(t, 'ডেলিভারি');
-      await tapText(t, 'রেডি সেল');
-      expect(find.text('ভ্যানের মাল'), findsOneWidget);
+      await tapText(t, 'ডেলিভারি শুরু');
+      await see(t, 'Transcom', contains: true);
+      await tapText(t, '✓ সব দিলাম');
+      await tapText(t, 'ডেলিভারি শেষ · পরের ধাপ');
+      await see(t, 'টাকা গ্রহণ');
+      await see(t, 'নতুন বাকি');
+      await tapText(t, 'নিশ্চিত করুন');
+      expect(called('POST /dsr/stops/188'), isTrue);
+      await see(t, 'ডেলিভারি হয়েছে');
+      await see(t, 'ভুল হয়েছে? Undo করুন');
+      await tapText(t, 'ইনভয়েস');
+      await see(t, 'কী অর্ডার · কী নিয়েছে · কত টাকা');
       await back(t);
-      await tapText(t, 'মিষ্টি ভ্যারাইটিজ স্টোর', last: true);
+      await tapText(t, 'পরের দোকান');
+    });
+
+    fakeTest('DM2 দোকান list, cancel an order with a reason', (t) async {
+      await pumpApp(t, const DsrHome());
+      await settle(t);
+      await tab(t, 'দোকান');
+      await see(t, 'রুটের দোকান');
+      await see(t, '✓ দেওয়া');
+      await tapText(t, 'দিন');
+      await tapText(t, 'এই অর্ডার বাতিল');
+      await see(t, 'পুরো অর্ডার বাতিল করবেন?');
+      await tapText(t, 'হ্যাঁ, বাতিল');
+      await see(t, 'বাতিল ফিরিয়ে আনুন');
+    });
+
+    fakeTest('offline: a delivery is queued', (t) async {
+      overrides['POST /dsr/stops/188'] = const NetFail();
+      await pumpApp(t, const DsrHome());
+      await settle(t);
+      await tapText(t, 'ডেলিভারি শুরু');
+      await tapText(t, 'ডেলিভারি শেষ · পরের ধাপ');
+      await tapText(t, 'নিশ্চিত করুন');
+      await see(t, 'ফোনে সংরক্ষিত');
+      expect(OfflineQueue.instance.ops.where((o) => o.path == '/dsr/stops/188'), hasLength(1));
+      await tapText(t, 'পরের দোকান');
+    });
+
+    fakeTest('ready sale and the stop\'s damage page open', (t) async {
+      await pumpApp(t, const DsrHome());
+      await settle(t);
+      await tab(t, 'দোকান');
+      await tapLabel(t, 'রেডি সেল');
+      await see(t, 'রেডি সেল');
+      await back(t);
+      await tapText(t, 'দিন');
       await tapText(t, '+ ড্যামেজ সংগ্রহ');
       expect(find.text('ড্যামেজ'), findsWidgets);
     });
 
-    fakeTest('van stock, expenses (add), settlement', (t) async {
+    fakeTest('DM5 ভ্যান, DM6 আমি (wage, calendar), expenses (add), settlement', (t) async {
       await pumpApp(t, const DsrHome());
       await settle(t);
-      await tab(t, 'ভ্যান স্টক');
-      expect(find.text('ভ্যানে বাকি'), findsOneWidget);
-      expect(find.text('লোডকৃত'), findsWidgets);
-      await tab(t, 'খরচ');
-      expect(find.text('ডিজেল'), findsOneWidget);
+      await tab(t, 'ভ্যান');
+      await see(t, 'ভ্যানের মাল');
+      await see(t, 'হিসাব মিলছে', contains: true);
+      await tab(t, 'আমি');
+      await see(t, 'হাজিরা · নভেম্বর');
+      await see(t, 'মাস শেষে পাবো');
+      await see(t, '৳৮,৩৫০');
+      await tapText(t, 'আজকের খরচ');
+      await see(t, 'ডিজেল');
       await tapText(t, '+ খরচ যোগ');
       await t.enterText(find.byType(TextField).at(0), 'খাবার');
       await t.enterText(find.byType(TextField).at(1), '120');
       await tapText(t, 'খরচ সংরক্ষণ করুন');
-      expect(calls.any((c) => c.startsWith('POST /dsr/expenses')), isTrue);
-      await t.pump(const Duration(seconds: 6)); // let the toast leave the bottom nav
-      await settle(t);
-      await tab(t, 'সেটেলমেন্ট');
+      expect(called('POST /dsr/expenses'), isTrue);
+      await t.pump(const Duration(seconds: 6)); // let the toast leave
+      await back(t);
+      await tapText(t, 'হিসাব মিলাও (সেটেলমেন্ট)');
       await see(t, 'হিসাবের বিবরণ');
       await see(t, 'নগদ টাকা গণনা');
       await t.enterText(find.byType(TextField).at(0), '6');
       await settle(t);
       await tapText(t, 'সেটেলমেন্ট জমা দিন');
-      await tapText(t, 'জমা দিন');
-      expect(calls.any((c) => c.startsWith('POST /dsr/settlement')), isTrue);
+      await tapText(t, 'জমা দিন', last: true);
+      expect(called('POST /dsr/settlement'), isTrue);
     });
 
     fakeTest('attendance page', (t) async {
@@ -265,9 +341,10 @@ void main() {
         'stats': {'stops': 0, 'delivered': 0, 'due': 0, 'pending': 0, 'cancelled': 0, 'dispatched_pcs': 0, 'available_pcs': 0}, 'settlement': null};
       await pumpApp(t, const DsrHome());
       await settle(t);
-      expect(find.textContaining('কোনো ডিসপ্যাচ করা ট্রিপ নেই'), findsOneWidget);
-      await tab(t, 'ডেলিভারি');
-      expect(find.textContaining('কোনো ডিসপ্যাচ করা ট্রিপ নেই'), findsWidgets);
+      await see(t, 'আজ কোনো ডেলিভারি নেই');
+      await see(t, 'আজ এখনো হাজিরা হয়নি');
+      await tab(t, 'দোকান');
+      await see(t, 'কোনো ডিসপ্যাচ করা ট্রিপ নেই', contains: true);
     });
   });
 
@@ -275,23 +352,18 @@ void main() {
     fakeTest('today → invoice, history, notifications, sign out row', (t) async {
       await pumpApp(t, const RetailerHome());
       await settle(t);
-      expect(find.text('রহিম স্টোর'), findsWidgets);
-      expect(find.text('আজকের মাল'), findsOneWidget);
+      await see(t, 'রহিম স্টোর');
+      await see(t, 'আজকের মাল');
       await tapText(t, 'Transcom-এর মাল');
-      expect(find.text('INVOICE'), findsOneWidget);
-      await see(t, 'প্রিন্ট করুন');
+      await see(t, 'প্রিন্ট', contains: true);
       await back(t);
       await tab(t, 'হিস্ট্রি');
-      await tapText(t, 'নভেম্বর', last: true); // an older day opens its delivery invoice
-      expect(find.text('ডেলিভারি ইনভয়েস'), findsWidgets);
+      await tapText(t, 'নভেম্বর', last: true); // an older day opens its invoice
+      await see(t, 'ইনভয়েস', contains: true);
       await back(t);
       await tab(t, 'আজ');
-      await t.drag(find.byType(Scrollable).first, const Offset(0, 1500), warnIfMissed: false); // back to the top
-      await t.pump(const Duration(milliseconds: 300));
-      await t.tap(find.byWidgetPredicate((w) => w is Svg && w.path == Ic.bell));
-      await settle(t);
-      expect(find.text('নোটিফিকেশন'), findsOneWidget);
-      expect(find.textContaining('মাল দিয়ে গেছে'), findsOneWidget);
+      await tapLabel(t, 'নোটিফিকেশন');
+      await see(t, 'নোটিফিকেশন');
       await back(t);
       await see(t, 'সাইন আউট');
     });
@@ -301,7 +373,17 @@ void main() {
         'day': {'orders': [], 'cards': [], 'total': 0, 'counts': {}}, 'unread': 0};
       await pumpApp(t, const RetailerHome());
       await settle(t);
-      expect(find.text('আজ কোনো মাল নেই'), findsOneWidget);
+      await see(t, 'আজ কোনো মাল নেই');
+    });
+  });
+
+  group('Format', () {
+    test('Bangla amount in words for the cash memo', () {
+      expect(takaWords(3654), 'তিন হাজার ছয়শত চুয়ান্ন টাকা মাত্র');
+      expect(takaWords(0), 'শূন্য টাকা মাত্র');
+      expect(takaWords(125000), 'এক লক্ষ পঁচিশ হাজার টাকা মাত্র');
+      expect(takaWords(10000000), 'এক কোটি টাকা মাত্র');
+      expect(takaWords(99.6), 'একশত টাকা মাত্র');
     });
   });
 }

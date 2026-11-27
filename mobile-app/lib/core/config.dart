@@ -5,7 +5,4 @@ class AppConfig {
       String.fromEnvironment('API_BASE', defaultValue: 'https://v2.happybangladesh.com');
 
   static const String appName = 'হ্যাপি বাংলাদেশ';
-
-  /// Map tiles (same providers as the web panels).
-  static const String tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 }

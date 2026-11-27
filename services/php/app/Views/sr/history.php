@@ -14,27 +14,28 @@
     data-sr-area="<?= e($currentSr['area'] ?? '') ?>"
     data-orders="<?= e(json_encode($orders, JSON_UNESCAPED_UNICODE)) ?>"
 >
-    <header class="sr-plain-head">
-        <h1 class="sr-plain-title">অর্ডার হিস্ট্রি</h1>
-    </header>
+    <div class="hp-sky" aria-hidden="true" style="--sky-h: 250px"></div>
+    <h1 class="sr-plain-title">অর্ডার হিস্ট্রি</h1>
 
-    <div class="card date-nav-bar date-nav-rich">
-        <button type="button" class="icon-btn icon-btn-round" id="historyPrevBtn" aria-label="আগের দিন"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
-
-        <label class="date-nav-center date-nav-col" for="historyDateInput" title="তারিখ নির্বাচন করুন">
+    <div class="hs-datebar">
+        <button type="button" class="hs-arrow" id="historyPrevBtn" aria-label="আগের দিন">‹</button>
+        <label class="hs-date" for="historyDateInput" title="তারিখ নির্বাচন করুন">
             <strong id="historyDateDisplay"><?= e(Bn::date($date)) ?></strong>
-            <span class="date-sub tabular" id="historySubSummary">
-                <strong id="historyOrderCount">০</strong>টি মেমো · <strong id="historyDayTotal">৳ ০</strong>
-            </span>
+            <span id="historySubSummary">তারিখ বদলাতে ট্যাপ করুন</span>
             <input type="date" id="historyDateInput" value="<?= e($date) ?>" max="<?= e($today) ?>" class="date-hidden-input" aria-label="তারিখ নির্বাচন করুন">
         </label>
-
-        <button type="button" class="icon-btn icon-btn-round" id="historyNextBtn" aria-label="পরের দিন"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+        <button type="button" class="hs-arrow" id="historyNextBtn" aria-label="পরের দিন">›</button>
     </div>
 
-    <div class="history-list" id="historyList"></div>
+    <section class="hs-sum">
+        <div class="hs-sum-l"><span>মোট অর্ডার</span><strong class="tabular" id="historyDayTotal">৳ ০</strong></div>
+        <div class="hs-chip is-blue-soft"><b class="tabular" id="historyOrderCount">০</b><span>মেমো</span></div>
+        <div class="hs-chip"><b class="tabular" id="historyDayOc">+৳ ০</b><span>নিট O/C</span></div>
+    </section>
+
+    <div class="hs-list" id="historyList"></div>
     <div class="card empty-state" id="historyEmpty" hidden>
-        <p>এই তারিখে কোনো দোকানের অর্ডার পাওয়া যায়নি।</p>
+        <p>এই তারিখে কোনো দোকানের অর্ডার পাওয়া যায়নি।</p>
     </div>
 </div>
 

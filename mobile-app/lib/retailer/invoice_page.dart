@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import '../core/format.dart';
 import '../core/printer.dart';
 import '../ui/common.dart';
+import '../ui/hkit.dart';
 import '../ui/pwa_kit.dart';
-import 'rkit.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
 enum InvoiceMode { order, delivery }
 
-/// Order invoice / delivery invoice — same layout as /retailer/invoice and /retailer/delivery-invoice.
-/// The PWA's "শেয়ার / PDF" button is a Bluetooth print here.
+/// R2 · ইনভয়েস (per company) and R8 · ইনভয়েস · লাভসহ (what arrived, cost vs MRP, profit).
+/// "শেয়ার / PDF" of the web is a Bluetooth receipt print on the phone.
 class InvoicePage extends StatefulWidget {
   const InvoicePage({super.key, required this.date, required this.orders, required this.selectedId, this.mode = InvoiceMode.order});
   final String date;
@@ -63,381 +63,240 @@ class _InvoicePageState extends State<InvoicePage> {
     final orders = widget.orders;
     final o = orders.isEmpty ? null : orders[_cur.clamp(0, orders.length - 1)];
     final delivery = _mode == InvoiceMode.delivery;
-    return Scaffold(
-      backgroundColor: RC.outer,
-      body: Frame(
-        child: Container(
-          color: RC.bg,
-          child: Column(children: [
-            RPlainHead(title: 'ইনভয়েস', subtitle: delivery ? null : 'প্রতিটা কোম্পানির আলাদা ইনভয়েস', onBack: () => Navigator.pop(context)),
-            Expanded(
-              child: ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 40), children: [
-                if (delivery) _Seg(mode: _mode, onChanged: (m) => setState(() => _mode = m)),
-                if (orders.length > 1)
-                  SizedBox(
-                    height: 56,
-                    child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(2, 2, 2, 14), children: [
-                      for (var i = 0; i < orders.length; i++)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 10),
-                          child: GestureDetector(
-                            onTap: () => setState(() => _cur = i),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: _cur == i ? RC.ink : Colors.white, borderRadius: BorderRadius.circular(99),
-                                border: Border.all(color: _cur == i ? RC.ink : RC.border),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text('${orders[i]['company']} · ${orders[i]['sr']}', style: ts(14, w: FontWeight.w700, color: _cur == i ? Colors.white : RC.ink)),
-                            ),
-                          ),
-                        ),
-                    ]),
-                  ),
-                if (o == null)
-                  const REmpty('এই দিনে কোনো ইনভয়েস নেই')
-                else ...[
-                  delivery ? _DeliveryInvoice(o: o, date: widget.date) : _OrderInvoice(o: o, date: widget.date),
-                  Row(children: [
-                    Expanded(child: _ActionBtn('প্রিন্ট করুন', bg: Colors.white, fg: RC.ink, border: true, onTap: () async {
-                      final err = await busy(context, () => PrinterService.print(_receipt(o)));
-                      if (context.mounted) toast(context, err ?? 'প্রিন্ট হয়েছে।', error: err != null);
-                    })),
-                    const SizedBox(width: 10),
-                    Expanded(child: _ActionBtn('সমস্যা জানান', bg: RC.dangerSoft, fg: RC.danger, onTap: () {
-                      showDialog<void>(
-                        context: context,
-                        builder: (c) => AlertDialog(
-                          content: Text('সমস্যা জানাতে আপনার ডেলিভারি ম্যান বা SR-কে ফোন করুন।', style: ts(15)),
-                          actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('ঠিক আছে'))],
-                        ),
-                      );
-                    })),
-                  ]),
-                  if (delivery && '${o['stage']}' == 'arrived' && o['profit_per_100'] != null)
-                    Container(
-                      margin: const EdgeInsets.only(top: 16),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: RC.okSoft, borderRadius: BorderRadius.circular(20)),
-                      child: Row(children: [
-                        Text('৳', style: ts(26, w: FontWeight.w700)),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text.rich(TextSpan(style: ts(15, h: 1.5), children: [
-                            const TextSpan(text: 'প্রতি '),
-                            TextSpan(text: '৳১০০', style: ts(15, w: FontWeight.w700)),
-                            const TextSpan(text: ' কেনায় আপনার লাভ '),
-                            TextSpan(text: money(o['profit_per_100']), style: ts(15, w: FontWeight.w700, color: RC.ok)),
+    final partner = o == null ? const <String, dynamic>{} : _m(o['partner']);
+    final kicker = delivery && o != null ? [o['company'], partner['name'], o['code']].where((x) => '${x ?? ''}'.isNotEmpty).join(' · ') : 'প্রতিটা কোম্পানির আলাদা ইনভয়েস';
+    final arrived = o != null && '${o['stage']}' == 'arrived';
+    return SkyStatusBar(
+      child: Scaffold(
+        backgroundColor: HC.bg,
+        body: Frame(
+          color: HC.outer,
+          child: ColoredBox(
+            color: HC.bg,
+            child: HScroll(children: [
+              SkyBox(
+                height: 240,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  SkyHead(leading: const SkyBack(), kicker: kicker, title: delivery ? 'ইনভয়েস · লাভসহ' : 'ইনভয়েস'),
+                  gap12,
+                  HSeg(items: const ['অর্ডার ইনভয়েস', 'ডেলিভারি ইনভয়েস'], index: delivery ? 1 : 0,
+                      onTap: (i) => setState(() => _mode = i == 1 ? InvoiceMode.delivery : InvoiceMode.order)),
+                  gap12,
+                  if (orders.length > 1) ...[
+                    HPills(items: [for (final x in orders) '${x['company']} · ${x['sr']}'], index: _cur, onTap: (i) => setState(() => _cur = i)),
+                    gap12,
+                  ],
+                  if (o == null)
+                    const HEmpty('এই দিনে কোনো ইনভয়েস নেই')
+                  else ...[
+                    delivery ? _DeliveryInvoice(o: o, date: widget.date) : _OrderInvoice(o: o, date: widget.date),
+                    if (delivery && arrived && o['profit'] != null) ...[
+                      gap12,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        decoration: BoxDecoration(color: HC.ink, borderRadius: BorderRadius.circular(22)),
+                        child: Row(children: [
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('আমার লাভ', style: hs(12, color: HC.onDark)),
+                            Text(sMoney(o['profit']), style: hs(28, w: w8, color: HC.lilac, num: true, h: 1.25)),
                           ])),
-                        ),
-                      ]),
-                    ),
-                ],
-              ]),
-            ),
-          ]),
+                          if (o['profit_per_100'] != null)
+                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                              Text('প্রতি ৳১০০ কেনায়', style: hs(11, color: HC.onDark)),
+                              Text(sMoney(o['profit_per_100']), style: hs(18, w: w7, color: Colors.white, num: true)),
+                            ]),
+                        ]),
+                      ),
+                    ],
+                    gap12,
+                    Row(children: [
+                      Expanded(child: HBtn('সমস্যা জানান', kind: HBtnKind.line, onTap: () => showDialog<void>(
+                            context: context,
+                            builder: (c) => AlertDialog(
+                              title: const Text('সমস্যা জানান'),
+                              content: const Text('মাল কম, নষ্ট বা দাম ভুল হলে আপনার ডেলিভারি ম্যান বা SR-কে ফোন করুন। ২৪ ঘণ্টার মধ্যে জানালে ঠিক করা হবে।'),
+                              actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('ঠিক আছে'))],
+                            ),
+                          ))),
+                      const SizedBox(width: 10),
+                      Expanded(child: HBtn('প্রিন্ট করুন', icon: Ic.print, onTap: () async {
+                        final err = await busy(context, () => PrinterService.print(_receipt(o)));
+                        if (context.mounted) toast(context, err ?? 'প্রিন্ট হয়েছে।', error: err != null);
+                      })),
+                    ]),
+                  ],
+                ]),
+              ),
+            ]),
+          ),
         ),
       ),
     );
   }
 }
 
-class _Seg extends StatelessWidget {
-  const _Seg({required this.mode, required this.onChanged});
-  final InvoiceMode mode;
-  final ValueChanged<InvoiceMode> onChanged;
-  @override
-  Widget build(BuildContext context) {
-    Widget item(String t, InvoiceMode m) => Expanded(
-          child: GestureDetector(
-            onTap: () => onChanged(m),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              decoration: BoxDecoration(
-                color: mode == m ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(16),
-                boxShadow: mode == m ? const [BoxShadow(color: Color(0x1A0F172A), blurRadius: 8, offset: Offset(0, 2))] : null,
-              ),
-              child: Center(child: Text(t, style: ts(14, w: FontWeight.w700, color: mode == m ? RC.ink : RC.ink2))),
-            ),
-          ),
-        );
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(color: const Color(0xFFE6EBF3), borderRadius: BorderRadius.circular(22)),
-      child: Row(children: [item('অর্ডার ইনভয়েস', InvoiceMode.order), item('ডেলিভারি ইনভয়েস', InvoiceMode.delivery)]),
-    );
-  }
-}
-
-class _ActionBtn extends StatelessWidget {
-  const _ActionBtn(this.text, {required this.bg, required this.fg, required this.onTap, this.border = false});
-  final String text;
-  final Color bg, fg;
-  final bool border;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: 52,
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18), border: border ? Border.all(color: RC.border) : null),
-          child: Center(child: Text(text, style: ts(15.5, w: FontWeight.w700, color: fg))),
-        ),
-      );
-}
-
-Widget _tot(String k, String v, {bool grand = false, Color? vColor, bool muted = false, bool boldK = false}) => Container(
-      margin: EdgeInsets.only(top: grand ? 6 : 0),
-      padding: EdgeInsets.only(top: grand ? 8 : 4, bottom: 4),
-      decoration: grand ? const BoxDecoration(border: Border(top: BorderSide(color: RC.ink))) : null,
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: Text(k, style: ts(grand ? 17 : 14, w: grand || boldK ? FontWeight.w700 : FontWeight.w400, color: grand ? RC.ink : (muted ? RC.muted : RC.ink2)))),
-        const SizedBox(width: 10),
-        Text(v, style: ts(grand ? 20 : 14, w: grand ? FontWeight.w700 : FontWeight.w400, color: vColor ?? (grand ? RC.ink : (muted ? RC.muted : RC.ink2)), tabular: true)),
-      ]),
-    );
-
+/// R2 card: brand + INVOICE, bill-to / meta box, items with MRP and profit, totals, profit strip, words.
 class _OrderInvoice extends StatelessWidget {
   const _OrderInvoice({required this.o, required this.date});
   final Map<String, dynamic> o;
   final String date;
-
   @override
   Widget build(BuildContext context) {
-    final partner = _m(o['partner']);
     final shop = _m(o['shop']);
+    final partner = _m(o['partner']);
     final items = (o['items'] as List).map(_m).toList();
-    final ok = '${o['tone']}' == 'ok';
-    final badgeBg = ok ? RC.okSoft : RC.warnSoft;
-    final badgeFg = ok ? RC.ok : RC.warn;
-    Widget kv(String k, String v) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(k, style: ts(12, color: RC.muted, h: 1.4)),
-          Text(v, style: ts(14, w: FontWeight.w600, h: 1.4)),
-        ]);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: RC.blue, width: 6)),
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10), bottomLeft: Radius.circular(22), bottomRight: Radius.circular(22)),
-        boxShadow: RC.shadow,
-      ),
+    final tone = '${o['tone']}';
+    final people = [o['company'], o['sr'] == 'রেডি সেল' ? 'রেডি সেল' : 'SR ${o['sr']}', if (o['dm'] != null) 'DM ${o['dm']}'].join(' · ');
+    return HCard(
+      lift: true, radius: 22, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Happy Bangladesh', style: hs(16, w: w7, color: HC.blue)),
+            Text([partner['name'], partner['address']].where((x) => '${x ?? ''}'.isNotEmpty).join(' · '), style: hs(11, color: HC.muted)),
+          ])),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text('INVOICE', style: const TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1, color: HC.ink)),
+            const SizedBox(height: 4),
+            HChip('${o['status']}', bg: tone == 'ok' || tone == 'info' ? HC.soft : HC.chip, fg: tone == 'ok' || tone == 'info' ? HC.blue : HC.ink2, size: 11),
+          ]),
+        ]),
+        gap8,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(color: HC.bg, borderRadius: BorderRadius.circular(14)),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Text.rich(TextSpan(style: hs(11, color: HC.muted, h: 1.55), children: [
+              const TextSpan(text: 'বিল টু\n'),
+              TextSpan(text: '${shop['name']}', style: hs(13, w: w7, h: 1.55)),
+              if ('${shop['address'] ?? ''}'.isNotEmpty) TextSpan(text: '\n${shop['address']}'),
+            ]))),
+            const SizedBox(width: 12),
+            Expanded(child: Text.rich(textAlign: TextAlign.right, TextSpan(style: hs(11, color: HC.muted, h: 1.55), children: [
+              const TextSpan(text: 'ইনভয়েস নং '),
+              TextSpan(text: '${o['code']}', style: hs(11, w: w7, h: 1.55)),
+              const TextSpan(text: '\nতারিখ '),
+              TextSpan(text: dateLongBn(date), style: hs(11, w: w7, h: 1.55)),
+              TextSpan(text: '\n$people'),
+            ]))),
+          ]),
+        ),
+        gap8,
+        _TableRow(cells: const ['বিবরণ', 'পিস', 'দর', 'টাকা · লাভ'], head: true),
+        for (final it in items)
+          _TableRow(cells: [
+            '${it['name']}', bn(it['pcs']), tk(it['rate']), tk(it['amount']),
+          ], sub0: it['mrp'] != null ? 'MRP ${tk(it['mrp'])}' : null, sub3: it['gain'] != null ? sMoney(it['gain']) : null),
+        gap8,
+        const HDashed(),
+        gap8,
+        if (num0(o['damage']) > 0) ...[HKv('সাবটোটাল', tk(o['subtotal'])), HKv('ড্যামেজ কর্তন', '−${tk(o['damage'])}')],
+        HKv('মোট', tk(o['total']), big: true),
+        if (num0(o['paid']) > 0) HKv('নগদ পরিশোধ', tk(o['paid'])),
+        if (num0(o['due']) > 0) HKv('বাকি', tk(o['due']), valueColor: HC.red),
+        if (o['profit'] != null) ...[
+          gap8,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: HC.soft, borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              Expanded(child: Text('আপনার লাভ · সব MRP-তে বেচলে', style: hs(12, w: w6, color: HC.blue))),
+              Text(sMoney(o['profit']), style: hs(18, w: w7, color: HC.blue, num: true)),
+            ]),
+          ),
+        ],
+        gap8,
+        Text('কথায়: ${o['words']}', style: hs(11, color: HC.muted)),
+      ]),
+    );
+  }
+}
+
+/// R8 card: who delivered when, items with cost / MRP / profit, shortfalls in red, totals.
+class _DeliveryInvoice extends StatelessWidget {
+  const _DeliveryInvoice({required this.o, required this.date});
+  final Map<String, dynamic> o;
+  final String date;
+  @override
+  Widget build(BuildContext context) {
+    if ('${o['stage']}' != 'arrived') {
+      return HCard(lift: true, padding: const EdgeInsets.fromLTRB(18, 26, 18, 26), child: Column(children: [
+        const Svg('<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>', size: 30, color: HC.faint, stroke: 1.6),
+        gap8,
+        Text('মাল এখনো আসেনি', style: hs(16, w: w7)),
+        Text('${o['status']} · মাল পৌঁছালে ডেলিভারি ইনভয়েস এখানে দেখা যাবে।', textAlign: TextAlign.center, style: hs(13, color: HC.muted)),
+      ]));
+    }
+    final items = (o['items'] as List).map(_m).toList();
+    return HCard(
+      lift: true, radius: 24, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
-          Container(
-            width: 46, height: 46,
-            decoration: BoxDecoration(color: RC.blue, borderRadius: BorderRadius.circular(12)),
-            child: const Center(child: Svg(Ic.logoMark, size: 26, color: Colors.white, stroke: 2.4)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Happy Bangladesh', style: ts(16, w: FontWeight.w700, h: 1.2)),
-              Text([partner['name'], partner['phone']].where((x) => x != null && '$x'.isNotEmpty).join(' · '), style: ts(12, color: RC.muted, h: 1.4)),
-            ]),
-          ),
+          Expanded(child: Text.rich(TextSpan(style: hs(11, color: HC.muted), children: [
+            const TextSpan(text: 'ডেলিভারি '),
+            TextSpan(text: '${o['dm'] != null ? 'DM ${o['dm']}' : '—'}${o['time'] != null ? ' · ${bn(o['time'])}' : ''}', style: hs(11, w: w7)),
+          ]))),
+          Text(dateLongBn(date), style: hs(11, color: HC.muted)),
         ]),
-        Padding(
-          padding: const EdgeInsets.only(top: 14),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('INVOICE', style: ts(18, w: FontWeight.w700, ls: 1.5, h: 1.2)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(6)),
-              child: Text('${o['status']}', style: ts(12.5, w: FontWeight.w700, color: badgeFg)),
-            ),
-          ]),
-        ),
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 14),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: const BoxDecoration(border: Border.symmetric(horizontal: BorderSide(color: RC.border))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('বিল টু', style: ts(12, w: FontWeight.w700, color: RC.ink2)),
-                Text('${shop['name']}', style: ts(18, w: FontWeight.w700, h: 1.3)),
-                if ('${shop['address'] ?? ''}'.isNotEmpty) Text('${shop['address']}', style: ts(13.5, color: RC.ink2, h: 1.4)),
-                if ('${shop['phone'] ?? ''}'.isNotEmpty) Text('${shop['phone']}', style: ts(13.5, color: RC.ink2, h: 1.4)),
-              ]),
-            ),
-            Wrap(runSpacing: 8, children: [
-              for (final p in [
-                ('ইনভয়েস নং', '${o['code']}'),
-                ('তারিখ', dateLongBn(date)),
-                ('কোম্পানি', '${o['company']}'),
-                ('SR', '${o['sr']}'),
-                ('ডেলিভারি', '${o['dm'] ?? '—'}'),
-              ])
-                FractionallySizedBox(widthFactor: 0.5, child: Padding(padding: const EdgeInsets.only(right: 7), child: kv(p.$1, p.$2))),
-            ]),
-          ]),
-        ),
-        for (var n = 0; n < items.length; n++)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: RC.border))),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 18, child: Text(bn(n + 1), style: ts(13, color: RC.muted))),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${items[n]['name']}', style: ts(15, w: FontWeight.w700, h: 1.35)),
-                  Text('${numTrim(items[n]['pcs'])} পিস × ${money(items[n]['rate'])}${items[n]['mrp'] != null ? ' · MRP ${money(items[n]['mrp'])}' : ''}', style: ts(12.5, color: RC.muted, h: 1.4)),
-                ]),
-              ),
-              const SizedBox(width: 10),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(money(items[n]['amount']), style: ts(15, w: FontWeight.w700, tabular: true)),
-                if (items[n]['gain'] != null) Text('+${money(items[n]['gain'])}', style: ts(12.5, w: FontWeight.w700, color: RC.ok)),
-              ]),
-            ]),
+        gap8,
+        _TableRow(cells: const ['পণ্য', 'পিস', 'কেনা', 'MRP', 'লাভ'], head: true, five: true),
+        for (final it in items)
+          _TableRow(
+            five: true,
+            cells: ['${it['name']}', bn(it['pcs']), numTrim(it['rate']), it['mrp'] != null ? numTrim(it['mrp']) : '—', it['gain'] != null ? sMoney(it['gain']) : '—'],
+            sub0: int0(it['short']) > 0 ? '${bn(it['short'])}টি কম · ভ্যানে ছিল না' : null,
+            short: int0(it['short']) > 0,
           ),
+        gap8,
+        const HDashed(),
+        gap8,
+        HKv('আমার কেনা (বিল)', tk(o['subtotal'])),
+        if (num0(o['damage']) > 0) ...[HKv('ড্যামেজ কর্তন', '−${tk(o['damage'])}'), HKv('মোট বিল', tk(o['total']))],
+        if (o['mrp_total'] != null) HKv('MRP-তে বিক্রি করলে', tk(o['mrp_total'])),
         Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            _tot('সাবটোটাল', money(o['subtotal'])),
-            _tot(num0(o['damage']) > 0 ? 'ড্যামেজ কর্তন' : 'ছাড়', money(o['damage'])),
-            _tot('মোট', money(o['total']), grand: true),
-            if (num0(o['paid']) > 0) _tot('নগদ পরিশোধ', money(o['paid'])),
-            if (num0(o['due']) > 0) _tot('বাকি', money(o['due'])),
-            if (o['profit'] != null)
-              Container(
-                margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(color: RC.okSoft, borderRadius: BorderRadius.circular(10)),
-                child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('আপনার লাভ', style: ts(16, w: FontWeight.w700, color: RC.ok)),
-                    Text('সব MRP-তে বেচলে', style: ts(12, color: RC.ok)),
-                  ]),
-                  Text('+${money(o['profit'])}', style: ts(21, w: FontWeight.w700, color: RC.ok)),
-                ]),
-              ),
-          ]),
-        ),
-        Padding(padding: const EdgeInsets.only(top: 14, bottom: 28), child: Text('কথায়: ${o['words'] ?? ''}', style: ts(13.5, color: RC.ink2, h: 1.5))),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.symmetric(vertical: 2.5),
           child: Row(children: [
-            for (final t in ['গ্রাহকের স্বাক্ষর', 'ডেলিভারি ম্যান']) ...[
-              if (t != 'গ্রাহকের স্বাক্ষর') const SizedBox(width: 26),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.only(top: 6),
-                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: RC.ink2))),
-                  child: Text(t, textAlign: TextAlign.center, style: ts(12.5, color: RC.muted)),
-                ),
-              ),
-            ],
+            Expanded(child: Text(num0(o['due']) > 0 ? 'নগদ দিয়েছেন · বাকি রইল' : 'নগদ দিয়েছেন', style: hs(13, color: HC.muted))),
+            Text.rich(TextSpan(style: hs(13, w: w7, num: true), children: [
+              TextSpan(text: tk(o['paid'])),
+              if (num0(o['due']) > 0) ...[const TextSpan(text: ' · '), TextSpan(text: tk(o['due']), style: hs(13, w: w7, color: HC.red, num: true))],
+            ])),
           ]),
-        ),
-        Container(
-          padding: const EdgeInsets.only(top: 12),
-          decoration: const BoxDecoration(border: Border(top: BorderSide(color: RC.border))),
-          child: Text('মাল বুঝে নিয়ে স্বাক্ষর করুন · নষ্ট বা কম হলে ২৪ ঘণ্টার মধ্যে জানান · ধন্যবাদ', textAlign: TextAlign.center, style: ts(12.5, color: RC.ink2, h: 1.5)),
         ),
       ]),
     );
   }
 }
 
-class _DeliveryInvoice extends StatelessWidget {
-  const _DeliveryInvoice({required this.o, required this.date});
-  final Map<String, dynamic> o;
-  final String date;
-
+class _TableRow extends StatelessWidget {
+  const _TableRow({required this.cells, this.head = false, this.five = false, this.sub0, this.sub3, this.short = false});
+  final List<String> cells;
+  final bool head, five, short;
+  final String? sub0, sub3;
   @override
   Widget build(BuildContext context) {
-    final box = BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: RC.border));
-    if ('${o['stage']}' != 'arrived') {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
-        decoration: box,
-        child: Column(children: [
-          Text('মাল এখনো আসেনি', style: ts(17, w: FontWeight.w700), textAlign: TextAlign.center),
-          Text('${o['status']} · ডেলিভারি ইনভয়েস মাল পৌঁছালে এখানে দেখা যাবে।', style: ts(14, color: RC.ink2), textAlign: TextAlign.center),
-        ]),
-      );
-    }
-    final partner = _m(o['partner']);
-    final shop = _m(o['shop']);
-    final items = (o['items'] as List).map(_m).toList();
-    Widget kv(String k, Widget v) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(k, style: ts(14, color: RC.ink2, h: 1.5)),
-            const SizedBox(width: 12),
-            Flexible(child: v),
-          ]),
-        );
-    final time = '${o['time'] ?? ''}';
+    final flex = five ? const [23, 7, 9, 9, 10] : const [23, 8, 10, 12];
+    final base = head ? hs(10, color: HC.muted) : hs(13, num: true);
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 18),
-      decoration: box,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Container(
-          padding: const EdgeInsets.only(bottom: 12),
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: RC.ink))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${o['company']} · ${partner['name']}', style: ts(16.5, w: FontWeight.w700, h: 1.35)),
-            Text('Happy Bangladesh', style: ts(13, color: RC.muted, h: 1.4)),
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('ডেলিভারি ইনভয়েস', style: ts(16.5, w: FontWeight.w700)),
-                Text('${o['code']}', style: ts(13, color: RC.muted)),
-              ]),
-            ),
-          ]),
-        ),
-        kv('দোকান', Text('${shop['name']}', textAlign: TextAlign.right, style: ts(15.5, w: FontWeight.w700, h: 1.4))),
-        kv('ডেলিভারি', Text('${o['dm'] ?? '—'}${time.isNotEmpty ? ' · ${bn(time)}' : ''}', textAlign: TextAlign.right, style: ts(14, color: RC.ink2, h: 1.5))),
-        kv('তারিখ', Text(dateLongBn(date), style: ts(14, color: RC.ink2, h: 1.5))),
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(children: [
-            for (final it in items)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: RC.border))),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('${it['name']}', style: ts(15, w: FontWeight.w700, h: 1.35)),
-                      Text('${numTrim(it['pcs'])} পিস × ${money(it['rate'])} কেনা${it['mrp'] != null ? ' · MRP ${money(it['mrp'])}' : ''}', style: ts(12.5, color: RC.muted, h: 1.4)),
-                      if (num0(it['short']) > 0) Text('${numTrim(it['short'])}টি কম · ভ্যানে ছিল না', style: ts(12.5, color: RC.warn, h: 1.4)),
-                    ]),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text(money(num0(it['pcs']) * num0(it['rate'])), style: ts(15, w: FontWeight.w700, tabular: true)),
-                    if (it['gain'] != null) Text('লাভ ${money(it['gain'])}', style: ts(12.5, w: FontWeight.w700, color: RC.ok)),
+      padding: EdgeInsets.symmetric(vertical: head ? 0 : 9).copyWith(bottom: head ? 4 : 9),
+      decoration: BoxDecoration(border: head ? null : const Border(top: BorderSide(color: HC.line))),
+      child: Row(children: [
+        for (var i = 0; i < cells.length; i++)
+          Expanded(
+            flex: flex[i],
+            child: i == 0
+                ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(cells[i], style: head ? base : hs(13, w: w7)),
+                    if (sub0 != null) Text(sub0!, style: hs(10, color: short ? HC.red : HC.muted, w: short ? w7 : FontWeight.w400)),
+                  ])
+                : Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Text(cells[i], textAlign: TextAlign.right, style: head ? base : base.copyWith(
+                      fontWeight: (five && i == 4) || (!five && i == 3) ? w7 : null,
+                      color: five && i == 4 ? HC.blue : (five && i == 3 ? HC.muted : (short && i == 1 ? HC.red : null)),
+                    )),
+                    if (i == 3 && sub3 != null) Text(sub3!, style: hs(10, w: w7, color: HC.blue, num: true)),
                   ]),
-                ]),
-              ),
-          ]),
-        ),
-        const SizedBox(height: 4),
-        _tot('আমার কেনা (বিল)', money(o['total']), boldK: true),
-        if (o['mrp_total'] != null) _tot('MRP-তে বিক্রি করলে', money(o['mrp_total'])),
-        if (o['profit'] != null) _tot('আমার লাভ', money(o['profit']), grand: true, vColor: RC.ok),
-        if (num0(o['damage']) > 0) _tot('ড্যামেজ কর্তন', money(o['damage'])),
-        _tot('নগদ দিয়েছেন', money(o['paid'])),
-        if (num0(o['due']) > 0) _tot('নোট: বাকি রইল', money(o['due']), muted: true),
-        Container(
-          margin: const EdgeInsets.only(top: 14),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFFF1F3F6), borderRadius: BorderRadius.circular(10)),
-          child: Text('মাল পেয়েছেন', textAlign: TextAlign.center, style: ts(14, w: FontWeight.w700)),
-        ),
+          ),
       ]),
     );
   }

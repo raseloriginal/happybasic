@@ -31,7 +31,9 @@ final class RetailerController extends Controller
     {
         $r = RetailerAuthMiddleware::retailer();
 
-        return $this->view('retailer.history', ['title' => 'হিস্ট্রি', 'activeNav' => 'history', 'rows' => RetailerPortal::history($r['ids'])]);
+        return $this->view('retailer.history', [
+            'title' => 'হিস্ট্রি', 'activeNav' => 'history', 'rows' => RetailerPortal::history($r['ids']), 'week' => RetailerPortal::weekSummary($r['ids']),
+        ]);
     }
 
     public function invoice(Request $request): Response
@@ -48,14 +50,13 @@ final class RetailerController extends Controller
     {
         $r = RetailerAuthMiddleware::retailer();
         $events = RetailerPortal::notifications($r['ids'], $r['seen_at']);
-        $groups = [];
-        foreach ($events as $e) {
-            $groups[$e['group']][] = $e;
-        }
+        $orders = array_values(array_filter($events, static fn(array $e): bool => $e['kind'] === 'order'));
+        $dms = array_values(array_filter($events, static fn(array $e): bool => $e['kind'] !== 'order'));
+        $unread = static fn(array $list): int => count(array_filter($list, static fn(array $e): bool => $e['unread']));
 
         return $this->view('retailer.notifications', [
-            'title' => 'নোটিফিকেশন', 'activeNav' => 'today', 'groups' => $groups,
-            'unread' => count(array_filter($events, static fn(array $e): bool => $e['unread'])),
+            'title' => 'নোটিফিকেশন', 'activeNav' => 'today', 'orders' => $orders, 'dms' => $dms,
+            'unread' => $unread($events), 'unreadOrders' => $unread($orders), 'unreadDms' => $unread($dms),
         ]);
     }
 

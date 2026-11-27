@@ -35,7 +35,11 @@ final class RetailerApiController extends Controller
 
     public function history(): Response
     {
-        return $this->action(fn(): array => ['rows' => RetailerPortal::history(RetailerAuthMiddleware::retailer()['ids'])]);
+        return $this->action(function (): array {
+            $ids = RetailerAuthMiddleware::retailer()['ids'];
+
+            return ['rows' => RetailerPortal::history($ids), 'week' => RetailerPortal::weekSummary($ids)];
+        });
     }
 
     /** Orders (with invoice lines and totals) of one date. */

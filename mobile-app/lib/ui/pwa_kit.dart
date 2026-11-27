@@ -12,13 +12,25 @@ bool kMapTiles = true;
 
 /// Centers [child] in the 430px frame on wide screens (tablets), like the PWA's `.shell`.
 class Frame extends StatelessWidget {
-  const Frame({super.key, required this.child, this.color});
+  const Frame({super.key, required this.child, this.color, this.shrink = false});
   final Widget child;
   final Color? color;
+  /// Shrink-wrap vertically — for Scaffold.bottomNavigationBar, which would otherwise take the whole screen.
+  final bool shrink;
   @override
   Widget build(BuildContext context) => ColoredBox(
         color: color ?? const Color(0xFFE7ECF3),
-        child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: kFrameW), child: child)),
+        // Phone-width column, centred on tablets; a body keeps the full height, a bottom bar wraps its content.
+        child: LayoutBuilder(
+          builder: (_, c) => Center(
+            heightFactor: shrink ? 1 : null,
+            child: SizedBox(
+              width: c.maxWidth < kFrameW ? c.maxWidth : kFrameW,
+              height: shrink || !c.hasBoundedHeight ? null : c.maxHeight,
+              child: child,
+            ),
+          ),
+        ),
       );
 }
 

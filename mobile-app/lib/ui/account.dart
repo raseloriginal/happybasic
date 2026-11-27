@@ -9,6 +9,7 @@ import '../core/offline.dart';
 import '../core/session.dart';
 import 'common.dart';
 import 'printer_page.dart';
+import 'dkit.dart';
 
 /// Password, photo, printer, sync and sign-out. Shared by SR, DSR and retailers.
 class AccountCard extends StatelessWidget {
@@ -107,9 +108,9 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('পাসওয়ার্ড পরিবর্তন')),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+    return DPage(
+      title: 'পাসওয়ার্ড পরিবর্তন',
+      child: ListView(padding: const EdgeInsets.all(16), children: [
         TextField(controller: _cur, obscureText: true, decoration: const InputDecoration(labelText: 'বর্তমান পাসওয়ার্ড')),
         const SizedBox(height: 12),
         TextField(controller: _new, obscureText: true, decoration: const InputDecoration(labelText: 'নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)')),

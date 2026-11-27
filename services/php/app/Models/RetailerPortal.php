@@ -157,12 +157,16 @@ final class RetailerPortal
                     default => 'পরে আসবে',
                 },
                 'rows' => array_map(static fn(array $o): array => ['sr' => $o['sr'], 'company' => $o['company'], 'bill' => $o['bill'], 'id' => $o['id']], $g),
+                'partner' => $g[0]['partner']['name'],
+                'srs' => array_values(array_unique(array_map(static fn(array $o): string => ($o['sr'] === 'রেডি সেল' ? 'রেডি সেল' : 'SR ' . $o['sr']) . ' · ' . $o['company'], $g))),
                 'total' => $sum,
                 'first' => $g[0]['id'],
             ];
         }
 
-        return ['orders' => $orders, 'cards' => $cards, 'total' => round($total, 2), 'counts' => $counts];
+        $srs = array_unique(array_filter(array_column($orders, 'sr'), static fn(string $n): bool => $n !== 'রেডি সেল'));
+
+        return ['orders' => $orders, 'cards' => $cards, 'total' => round($total, 2), 'counts' => $counts, 'sr_count' => count($srs)];
     }
 
     /** @return list<array<string, mixed>> */
@@ -193,6 +197,26 @@ final class RetailerPortal
         }, $rows);
     }
 
+    /** Last 7 days (today included): bought total and profit at MRP. @return array{bought: float, profit: float|null} */
+    public static function weekSummary(array $ids): array
+    {
+        $in = self::in($ids);
+        $from = date('Y-m-d', strtotime('-6 days'));
+        $bought = (float) (self::db()->fetch(
+            'SELECT COALESCE(SUM(' . self::BILL_SQL . "), 0) AS v FROM orders o LEFT JOIN trips t ON t.id = o.trip_id
+             WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND " . self::DAY_SQL . ' >= ?',
+            [$from]
+        )['v'] ?? 0);
+        $profit = self::db()->fetch(
+            "SELECT SUM((CASE WHEN o.status IN ('delivered', 'due', 'partial') THEN oi.delivered_pcs ELSE oi.ordered_pcs END) * (oi.mrp_pc - oi.sr_rate_pc)) AS v
+             FROM order_items oi JOIN orders o ON o.id = oi.order_id LEFT JOIN trips t ON t.id = o.trip_id
+             WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND oi.mrp_pc IS NOT NULL AND " . self::DAY_SQL . ' >= ?',
+            [$from]
+        )['v'] ?? null;
+
+        return ['bought' => round($bought, 2), 'profit' => $profit !== null ? round((float) $profit, 2) : null];
+    }
+
     public static function dateLabel(string $ymd): string
     {
         $ts = strtotime($ymd);
@@ -208,34 +232,41 @@ final class RetailerPortal
         $ev = [];
 
         foreach (self::db()->fetchAll(
-            "SELECT o.id, o.created_at, o.order_sr_total, c.name AS company, s.name AS sr
-             FROM orders o JOIN companies c ON c.id = o.company_id JOIN salesmen s ON s.id = o.sr_id
+            "SELECT o.id, o.created_at, o.order_sr_total, c.name AS company, s.name AS sr, " . self::DAY_SQL . " AS d
+             FROM orders o JOIN companies c ON c.id = o.company_id JOIN salesmen s ON s.id = o.sr_id LEFT JOIN trips t ON t.id = o.trip_id
              WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND o.created_at >= ? ORDER BY o.created_at DESC LIMIT 40",
             [$since]
         ) as $r) {
             $ev[] = ['kind' => 'order', 'at' => $r['created_at'], 'initial' => mb_substr((string) $r['sr'], 0, 1), 'company' => $r['company'],
+                'date' => $r['d'], 'order_id' => (int) $r['id'],
                 'title' => "SR {$r['sr']} · {$r['company']}",
                 'sub' => 'অর্ডার নিয়েছে · ' . self::money((float) $r['order_sr_total']) . ' · মেমো ' . Bn::digits(str_pad((string) $r['id'], 4, '0', STR_PAD_LEFT))];
         }
 
         foreach (self::db()->fetchAll(
-            "SELECT t.id, t.dispatched_at, dm.name AS dm, GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ' + ') AS companies
+            "SELECT t.id, t.dispatched_at, t.trip_date, dm.name AS dm, pa.name AS partner, SUM(o.order_sr_total) AS total,
+                    GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ' + ') AS companies
              FROM orders o JOIN trips t ON t.id = o.trip_id JOIN delivery_men dm ON dm.id = t.dsr_id JOIN companies c ON c.id = o.company_id
+             JOIN partners pa ON pa.id = o.partner_id
              WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND t.dispatched_at >= ?
              GROUP BY t.id ORDER BY t.dispatched_at DESC",
             [$since]
         ) as $r) {
-            $ev[] = ['kind' => 'onway', 'at' => $r['dispatched_at'], 'title' => "{$r['dm']} আসছে · {$r['companies']}-এর মাল"];
+            $ev[] = ['kind' => 'onway', 'at' => $r['dispatched_at'], 'title' => "{$r['dm']} আসছে · {$r['companies']}-এর মাল",
+                'short' => "{$r['dm']} আসছে", 'detail' => "{$r['partner']} · {$r['companies']} · " . self::money((float) $r['total']), 'date' => $r['trip_date']];
         }
 
         foreach (self::db()->fetchAll(
-            "SELECT o.trip_id, dm.name AS dm, MAX(o.delivered_at) AS at, SUM(o.delivered_sr_total - o.damage_amount) AS total
+            "SELECT o.trip_id, dm.name AS dm, MAX(o.delivered_at) AS at, SUM(o.delivered_sr_total - o.damage_amount) AS total,
+                    MAX(" . self::DAY_SQL . ") AS d, MAX(pa.name) AS partner, GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ' + ') AS companies
              FROM orders o LEFT JOIN trips t ON t.id = o.trip_id LEFT JOIN delivery_men dm ON dm.id = t.dsr_id
+             JOIN partners pa ON pa.id = o.partner_id JOIN companies c ON c.id = o.company_id
              WHERE o.retailer_id IN ({$in}) AND o.status IN ('delivered', 'due', 'partial') AND o.delivered_at >= ?
              GROUP BY o.trip_id, dm.name ORDER BY at DESC",
             [$since]
         ) as $r) {
-            $ev[] = ['kind' => 'arrived', 'at' => $r['at'], 'title' => ($r['dm'] ?: 'ডেলিভারি ম্যান') . ' মাল দিয়ে গেছে · ' . self::money((float) $r['total'])];
+            $ev[] = ['kind' => 'arrived', 'at' => $r['at'], 'title' => ($r['dm'] ?: 'ডেলিভারি ম্যান') . ' মাল দিয়ে গেছে · ' . self::money((float) $r['total']),
+                'short' => ($r['dm'] ?: 'ডেলিভারি ম্যান') . ' মাল দিয়ে গেছে', 'detail' => "{$r['partner']} · {$r['companies']} · " . self::money((float) $r['total']), 'date' => $r['d']];
         }
 
         usort($ev, static fn(array $a, array $b): int => strcmp((string) $b['at'], (string) $a['at']));

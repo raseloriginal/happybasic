@@ -13,6 +13,10 @@ class LocalStore {
 
   static Future<void> init() async {
     prefs = await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      _mem = {}; // browser preview: no file system, keep the cache in memory
+      return;
+    }
     _dir = Directory('${(await getApplicationSupportDirectory()).path}/cache');
     if (!await _dir.exists()) await _dir.create(recursive: true);
   }

@@ -200,6 +200,7 @@ final class OrderController extends Controller
                 'image' => $p['image'],
                 'tint' => $p['tint'],
                 'code' => $p['code'],
+                'category' => $p['category'] ?? null,
             ];
         }
 

@@ -55,6 +55,7 @@ class PushService {
   StreamSubscription? _msgSub;
 
   static Future<void> initLocal() async {
+    if (kIsWeb) return; // browser preview: no local notifications
     await localNotifications.initialize(
       settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
     );

@@ -4,6 +4,7 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../ui/common.dart';
 import '../ui/dkit.dart';
+import '../ui/hkit.dart';
 import '../ui/pwa_kit.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
@@ -66,8 +67,9 @@ class _SettlementPageState extends State<SettlementPage> {
     );
   }
 
-  Widget _kpi(String label, double v, {Color color = DC.ink, bool accent = false}) => DCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+  Widget _kpi(String label, double v, {Color color = DC.ink, bool accent = false}) => HCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), radius: 20,
+        color: accent ? HC.ink : Colors.white, border: !accent,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label, style: ts(11.5, w: FontWeight.w600, color: accent ? const Color(0xFFCBD5E1) : DC.muted)),
           const SizedBox(height: 4),
