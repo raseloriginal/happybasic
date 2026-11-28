@@ -141,6 +141,7 @@
                 <div class="rp-head-t">
                     <p id="rpRetailerSub" class="section-subtitle"></p>
                     <h2 id="rpRetailerName" class="section-title rp-shop-title">পণ্য নির্বাচন করুন</h2>
+                    <a id="rpRetailerPhone" class="rp-shop-phone" hidden></a>
                 </div>
             </div>
             <div class="rp-view-switch" role="group" aria-label="দেখার ধরন">

@@ -2668,6 +2668,8 @@ html, body { font-family: "Hind Siliguri", "Noto Sans Bengali", "Nirmala UI", "I
 .rp-head-t { display: flex; flex-direction: column; line-height: 1.2; }
 .rp-modal-head .section-subtitle { color: var(--hp-on-sky); font-size: 12px; margin: 0; }
 .rp-modal-head .rp-shop-title { color: #fff; font-size: 18px; font-weight: 700; }
+.rp-shop-phone { align-self: flex-start; margin-top: 4px; padding: 3px 10px; border-radius: 99px; background: rgba(255,255,255,.16); color: #fff; font-size: 13px; font-weight: 700; text-decoration: none; }
+.rp-shop-phone[hidden] { display: none; }
 .rp-view-switch { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); border-radius: 12px; }
 .rp-view-btn { color: var(--hp-on-sky); }
 .rp-view-btn.is-active { background: #fff; color: var(--ink); }

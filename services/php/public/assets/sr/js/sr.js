@@ -1934,6 +1934,17 @@
             }).join('');
         }
 
+        // The shop's number under its name; tapping it opens the phone dialer
+        function showRetailerPhone(phone) {
+            const el = document.getElementById('rpRetailerPhone');
+            if (!el) return;
+            const dial = String(phone || '').replace(/[^0-9+]/g, '');
+            el.hidden = false;
+            el.textContent = dial ? `📞 ${phone}` : 'ফোন নম্বর নেই';
+            if (dial) el.href = `tel:${dial}`;
+            else el.removeAttribute('href');
+        }
+
         function openRetailerProducts(retailerId, { replaceFrom = null } = {}) {
             const ret = srStore.retailers.find((r) => r.id === retailerId);
             if (!ret) return;
@@ -1960,6 +1971,7 @@
 
             const dist = haversineMeters(srLoc.lat, srLoc.lng, Number(ret.lat), Number(ret.lng));
             if (rpRetailerName) rpRetailerName.textContent = ret.name;
+            showRetailerPhone(ret.phone);
             if (rpRetailerSub) rpRetailerSub.textContent = `${activeOrderId ? 'অর্ডার এডিট' : 'নতুন অর্ডার'} · ${formatDistance(dist)}`;
             activeCategory = 'all';
             if (rpProductSearch) rpProductSearch.value = '';
