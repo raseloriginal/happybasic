@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/format.dart';
 import '../core/printer.dart';
@@ -111,9 +110,13 @@ class _InvoicePageState extends State<InvoicePage> {
                     ],
                     gap12,
                     Row(children: [
-                      Expanded(child: HBtn('সমস্যা জানান', kind: HBtnKind.line, onTap: () => showHSheet<void>(
-                            context,
-                            builder: (c) => _ProblemSheet(order: o),
+                      Expanded(child: HBtn('সমস্যা জানান', kind: HBtnKind.line, onTap: () => showDialog<void>(
+                            context: context,
+                            builder: (c) => AlertDialog(
+                              title: const Text('সমস্যা জানান'),
+                              content: const Text('মাল কম, নষ্ট বা দাম ভুল হলে আপনার ডেলিভারি ম্যান বা SR-কে ফোন করুন। ২৪ ঘণ্টার মধ্যে জানালে ঠিক করা হবে।'),
+                              actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('ঠিক আছে'))],
+                            ),
                           ))),
                       const SizedBox(width: 10),
                       Expanded(child: HBtn('প্রিন্ট করুন', icon: Ic.print, onTap: () async {
@@ -296,46 +299,5 @@ class _TableRow extends StatelessWidget {
           ),
       ]),
     );
-  }
-}
-
-/// সমস্যা জানান: call the delivery man, the SR or the partner straight from the invoice.
-class _ProblemSheet extends StatelessWidget {
-  const _ProblemSheet({required this.order});
-  final Map<String, dynamic> order;
-  @override
-  Widget build(BuildContext context) {
-    final partner = _m(order['partner']);
-    final people = [
-      if ('${order['dm_phone'] ?? ''}'.isNotEmpty) ('ডেলিভারি ম্যান', '${order['dm'] ?? ''}', '${order['dm_phone']}'),
-      if ('${order['sr_phone'] ?? ''}'.isNotEmpty) ('SR', '${order['sr'] ?? ''}', '${order['sr_phone']}'),
-      if ('${partner['phone'] ?? ''}'.isNotEmpty) ('পার্টনার', '${partner['name'] ?? ''}', '${partner['phone']}'),
-    ];
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('সমস্যা জানান', style: hs(18, w: w7)),
-      const SizedBox(height: 4),
-      Text('মাল কম, নষ্ট বা দাম ভুল হলে সরাসরি ফোন করুন। ২৪ ঘণ্টার মধ্যে জানালে ঠিক করা হবে।', style: hs(13.5, color: HC.muted)),
-      const SizedBox(height: 14),
-      if (people.isEmpty) Text('ফোন নম্বর পাওয়া যায়নি।', style: hs(13.5, color: HC.muted)),
-      for (final (role, name, phone) in people)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: HCard(
-            onTap: () => launchUrl(Uri.parse('tel:${phone.replaceAll(RegExp(r'[^0-9+]'), '')}')),
-            child: Row(children: [
-              LetterAvatar(name.isEmpty ? role : name, size: 42),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(name.isEmpty ? role : name, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(15, w: w7)),
-                Text('$role · $phone', style: hs(12.5, color: HC.muted, num: true)),
-              ])),
-              Container(
-                width: 44, height: 44, decoration: BoxDecoration(color: HC.soft, borderRadius: BorderRadius.circular(14)), alignment: Alignment.center,
-                child: const Svg('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>', size: 20, color: HC.blue, stroke: 1.9),
-              ),
-            ]),
-          ),
-        ),
-    ]);
   }
 }

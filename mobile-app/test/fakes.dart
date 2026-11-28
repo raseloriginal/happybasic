@@ -153,21 +153,8 @@ Map<String, dynamic> defaultRoutes(String key) {
           {'id': 1, 'name': 'Salman khan', 'unit_type': 'Dozen', 'qty_per_unit': 12, 'ordered_pcs': 12, 'dispatched_pcs': 0, 'delivered_pcs': 0, 'returned_pcs': 0, 'image': null, 'code': 'SK', 'tint': '#fefce8'}
         ]},
         'profile': {'name': 'Salman khan', 'initials': 'SK', 'code': 'SR-0001', 'phone': '+880 1711-889012', 'area': 'Bagha', 'company': 'ACI', 'partner': 'P', 'photo': null, 'daily_target': 0, 'monthly_target': 0, 'oc_balance': 25},
-        'month': _stats(), 'month_label': 'November 2026', 'month_goal': 400000, 'no_order': [],
+        'month': _stats(), 'month_label': 'November 2026',
       };
-    case 'GET /sr/report':
-      return {
-        'ok': true, 'date': '2026-11-25', 'today': '2026-11-25', 'label': 'বুধ, ২৫ নভে ২০২৬', 'no': 'SR-0001-2511', 'waiting': false, 'empty': false,
-        'flow': {'order': 3210, 'cancel': 0, 'part': 210, 'delivered': 3000},
-        'shops': [{'name': 'রাজকুমার স্টোর', 'order': 3210, 'delivered': 3000, 'cancel': 210, 'oc': 12}],
-        'totals': {'over': 20, 'commission': 8, 'net': 12},
-        'reasons': [{'name': 'দোকান বন্ধ', 'amount': 210}], 'products': [{'name': 'আটা', 'pcs': 10, 'value': 3000}],
-        'week': [], 'no_order': [{'id': 2, 'name': 'মা ভ্যারাইটিজ', 'time': '১০:২০'}],
-      };
-    case 'GET /sr/notifications':
-      return {'ok': true, 'unread': 0, 'items': []};
-    case 'POST /sr/notifications/seen':
-      return {'ok': true};
     case 'POST /sr/orders':
       return {'ok': true, 'message': 'অর্ডার সংরক্ষিত হয়েছে।', 'order': _order(17), 'warnings': ['স্টক কম'], 'day': {'date': '2026-11-25', 'completed': false, 'locked': false, 'orders': [], 'totals': {'orders': 0, 'value': 0, 'oc': 0}}};
     case 'POST /sr/orders/complete':

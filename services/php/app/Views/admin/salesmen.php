@@ -172,22 +172,10 @@
                     <input id="sr_number" name="number" type="tel" placeholder="+880 17XX-XXXXXX" required>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group span-2">
                     <label for="sr_daily_target">Daily Target (৳)</label>
                     <input id="sr_daily_target" name="daily_target" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 50000">
-                    <small class="muted">Leave empty for no target.</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="sr_monthly_target">Monthly Target (৳)</label>
-                    <input id="sr_monthly_target" name="monthly_target" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 1200000">
-                    <small class="muted">Empty = daily target × working days.</small>
-                </div>
-
-                <div class="form-group span-2">
-                    <label for="sr_code">SR ID</label>
-                    <input id="sr_code" name="code" type="text" maxlength="30" placeholder="e.g. HB-SR-0142">
-                    <small class="muted">Shown on the SR app and the day report. Empty = SR-0001 style.</small>
+                    <small class="muted">Daily order value target. Leave empty for no target.</small>
                 </div>
 
                 <div class="form-group span-2">

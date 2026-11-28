@@ -96,21 +96,19 @@ void main() {
       await pumpApp(t, const LoginPage());
       await settle(t);
       expect(find.byType(TextField), findsNWidgets(2));
-      expect(find.text('লগইন করুন'), findsWidgets);
+      expect(find.text('সাইন ইন করুন'), findsWidgets);
       await t.enterText(find.byType(TextField).first, '01711889012');
       await t.enterText(find.byType(TextField).last, 'wrong');
       overrides['POST /auth/login'] = ApiFail(422, 'ফোন নম্বর বা পাসওয়ার্ড ভুল।');
-      await tapText(t, 'লগইন', last: true);
+      await tapText(t, 'সাইন ইন করুন', last: true);
       expect(find.text('ফোন নম্বর বা পাসওয়ার্ড ভুল।'), findsOneWidget);
     });
 
-    fakeTest('button stays off until the phone and password are valid', (t) async {
+    fakeTest('empty fields show a hint, no request is sent', (t) async {
       await pumpApp(t, const LoginPage());
       await settle(t);
-      await tapText(t, 'লগইন', last: true);
-      await t.enterText(find.byType(TextField).first, '0171188');
-      await t.enterText(find.byType(TextField).last, 'secret');
-      await tapText(t, 'লগইন', last: true);
+      await tapText(t, 'সাইন ইন করুন', last: true);
+      expect(find.text('মোবাইল নম্বর ও পাসওয়ার্ড লিখুন।'), findsOneWidget);
       expect(calls.where((c) => c.startsWith('POST /auth/login')), isEmpty);
     });
   });
@@ -217,11 +215,8 @@ void main() {
       await see(t, 'দোকানে পাঠান');
       await back(t);
       await tab(t, 'আমি');
-      await see(t, 'লক্ষ্য', contains: true);
+      await see(t, 'অর্ডার সারাংশ');
       await see(t, 'লগআউট');
-      await tapText(t, 'দিনের রিপোর্ট তৈরি করুন');
-      await see(t, 'SR DAY REPORT');
-      await see(t, 'অর্ডার → ডেলিভারি');
     });
 
     fakeTest('new shop form', (t) async {
@@ -274,10 +269,10 @@ void main() {
       await see(t, 'রুটের দোকান');
       await see(t, '✓ দেওয়া');
       await tapText(t, 'দিন');
-      await tapLabel(t, 'এই কোম্পানি বাতিল');
+      await tapText(t, 'এই অর্ডার বাতিল');
       await see(t, 'পুরো অর্ডার বাতিল করবেন?');
       await tapText(t, 'হ্যাঁ, বাতিল');
-      expect(find.byWidgetPredicate((w) => w is Semantics && w.properties.label == 'আবার নিন'), findsWidgets);
+      await see(t, 'বাতিল ফিরিয়ে আনুন');
     });
 
     fakeTest('offline: a delivery is queued', (t) async {

@@ -116,8 +116,6 @@
                 $('sr_number').value = s ? s.number : '';
                 $('sr_status').value = s ? s.status : 'Active';
                 $('sr_daily_target').value = s?.daily_target || '';
-                $('sr_monthly_target').value = s?.monthly_target || '';
-                $('sr_code').value = s?.code || '';
                 syncOwnership();
             },
         });

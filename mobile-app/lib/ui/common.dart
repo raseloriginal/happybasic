@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,9 +10,6 @@ import '../core/offline.dart';
 import '../core/realtime.dart';
 import '../core/store.dart';
 import 'dkit.dart';
-import 'hkit.dart';
-import 'loader.dart';
-import 'motion.dart';
 
 const kBlue = Color(0xFF1F4FE0);
 const kInk = Color(0xFF0A1640);
@@ -37,8 +33,7 @@ ThemeData buildTheme({String? role}) {
     scaffoldBackgroundColor: const Color(0xFFF4F6FB),
     textTheme: base.textTheme.apply(bodyColor: ink, displayColor: ink),
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
     }),
     appBarTheme: const AppBarTheme(
       backgroundColor: Color(0xFFF4F6FB), foregroundColor: ink, elevation: 0, scrolledUnderElevation: 0, centerTitle: false, toolbarHeight: 56,
@@ -95,51 +90,26 @@ void toast(BuildContext context, String message, {bool error = false}) {
   ));
 }
 
-/// Type a count instead of tapping +/− (long counts are faster to type).
-Future<int?> askNumber(BuildContext context, String title, int value) async {
-  final c = TextEditingController(text: value == 0 ? '' : '$value');
-  final r = await showHSheet<int>(
-    context,
-    builder: (ctx) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text(title, style: hs(17, w: w7)),
-      const SizedBox(height: 14),
-      TextField(
-        controller: c, autofocus: true, keyboardType: TextInputType.number, textAlign: TextAlign.center,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly], style: hs(26, w: w8, num: true),
-        onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v) ?? 0),
-      ),
-      const SizedBox(height: 14),
-      Row(children: [
-        Expanded(child: HBtn('বাতিল', kind: HBtnKind.line, onTap: () => Navigator.pop(ctx))),
-        const SizedBox(width: 10),
-        Expanded(child: HBtn('ঠিক আছে', onTap: () => Navigator.pop(ctx, int.tryParse(c.text) ?? 0))),
-      ]),
-    ]),
-  );
-  c.dispose();
-  return r;
-}
-
 Future<bool> confirm(BuildContext context, String title, {String? body, String yes = 'হ্যাঁ', bool danger = false}) async {
-  final r = await showHSheet<bool>(
-    context,
-    builder: (c) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text(title, style: hs(18, w: w7)),
-      if (body != null) ...[const SizedBox(height: 6), Text(body, style: hs(14, color: HC.muted))],
-      const SizedBox(height: 18),
-      Row(children: [
-        Expanded(child: HBtn('না', kind: HBtnKind.line, onTap: () => Navigator.pop(c, false))),
-        const SizedBox(width: 10),
-        Expanded(child: HBtn(yes, kind: danger ? HBtnKind.danger : HBtnKind.dark, onTap: () => Navigator.pop(c, true))),
-      ]),
-    ]),
+  final r = await showDialog<bool>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(title),
+      content: body == null ? null : Text(body),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('না')),
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(80, 42), backgroundColor: danger ? kDanger : null),
+          onPressed: () => Navigator.pop(c, true), child: Text(yes)),
+      ],
+    ),
   );
   return r ?? false;
 }
 
 /// Runs [task] with a blocking spinner, shows API errors as a toast. Returns null on failure.
 Future<T?> busy<T>(BuildContext context, Future<T> Function() task) async {
-  showDialog(context: context, barrierDismissible: false, builder: (_) => const HbLoader());
+  showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
   try {
     return await task();
   } on ApiException catch (e) {
@@ -197,9 +167,7 @@ class AsyncBodyState extends State<AsyncBody> {
   @override
   void initState() {
     super.initState();
-    // The start-up loader stays until this first load has finished (or failed).
-    AppStart.pending++;
-    _run().whenComplete(() => AppStart.pending--);
+    _run();
     _sync = OfflineQueue.instance.onSynced.listen((_) => _run(silent: true));
     // Live events (new order, delivery done...), app resume and the 1-minute fallback refresh the screen quietly.
     _live = Realtime.instance.events.listen((_) => _run(silent: true));
@@ -238,7 +206,7 @@ class AsyncBodyState extends State<AsyncBody> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return widget.sky ? const SkySkeleton() : const PageSkeleton(sky: false);
+    if (_loading) return const Center(child: CircularProgressIndicator());
     if (_data == null) {
       return ListView(padding: widget.padding, children: [
         const SizedBox(height: 80),
@@ -260,7 +228,7 @@ class AsyncBodyState extends State<AsyncBody> {
         padding: pad,
         children: [
           if (_data!.stale && !widget.sky) const OfflineBanner(),
-          Appear(child: widget.builder(context, _data!.data, reload)),
+          widget.builder(context, _data!.data, reload),
         ],
       ),
     );

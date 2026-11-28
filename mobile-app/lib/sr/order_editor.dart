@@ -50,7 +50,27 @@ Widget _thumb(Map<String, dynamic> p, double size, double radius) => Container(
           fallback: Center(child: Text('${p['code'] ?? '${p['name']}'.characters.first}', style: hs(size > 50 ? 15 : 12, w: w8, color: HC.ink2)))),
     );
 
-Future<int?> _askNumber(BuildContext context, String title, int value) => askNumber(context, title, value);
+/// Number pad entry for a stepper value (long counts are faster to type than to tap).
+Future<int?> _askNumber(BuildContext context, String title, int value) async {
+  final c = TextEditingController(text: value == 0 ? '' : '$value');
+  final r = await showDialog<int>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title, style: hs(16, w: w7)),
+      content: TextField(
+        controller: c, autofocus: true, keyboardType: TextInputType.number, textAlign: TextAlign.center,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly], style: hs(24, w: w8, num: true),
+        onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v) ?? 0),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('বাতিল')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, int.tryParse(c.text) ?? 0), child: const Text('ঠিক আছে')),
+      ],
+    ),
+  );
+  c.dispose();
+  return r;
+}
 
 /// SR3 — product catalogue for one shop (category rail, grid / list), floating cart bar; SR3b product sheet; SR4 success.
 class OrderEditorPage extends StatefulWidget {

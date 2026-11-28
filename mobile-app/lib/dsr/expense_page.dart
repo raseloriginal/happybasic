@@ -4,7 +4,6 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/offline.dart';
 import '../ui/common.dart';
-import '../ui/hkit.dart';
 import '../ui/dkit.dart';
 import '../ui/pwa_kit.dart';
 
@@ -28,12 +27,14 @@ class _ExpensePageState extends State<ExpensePage> {
     final note = TextEditingController();
     var cat = categories.first;
     String? error;
-    final ok = await showHSheet<bool>(
-      context, scroll: false,
+    final ok = await showDialog<bool>(
+      context: context,
       builder: (c) => StatefulBuilder(
-        builder: (c, set) => Material(
-          color: Colors.white,
+        builder: (c, set) => Dialog(
+          backgroundColor: Colors.white, insetPadding: const EdgeInsets.all(14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: DC.border)),
           child: SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),

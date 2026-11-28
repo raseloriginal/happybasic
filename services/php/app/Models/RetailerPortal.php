@@ -35,7 +35,7 @@ final class RetailerPortal
     {
         $in = self::in($ids);
         $rows = self::db()->fetchAll(
-            "SELECT o.*, c.name AS company, s.name AS sr_name, s.phone AS sr_phone, dm.phone AS dm_phone, t.status AS trip_status, t.dispatched_at, t.trip_date, t.dsr_id, r.lat AS shop_lat, r.lng AS shop_lng,
+            "SELECT o.*, c.name AS company, s.name AS sr_name, t.status AS trip_status, t.dispatched_at, t.trip_date,
                     dm.name AS dm_name, pa.name AS partner_name, pa.address AS partner_address, pa.phone AS partner_phone,
                     r.name AS shop_name, r.address AS shop_address, r.phone AS shop_phone
              FROM orders o
@@ -108,10 +108,7 @@ final class RetailerPortal
             'company' => $o['company'],
             'sr' => $o['sr_name'] ?: 'রেডি সেল',
             'dm' => $o['dm_name'],
-            'sr_phone' => $o['sr_phone'] ? Phone::format((string) $o['sr_phone']) : '',
-            'dm_phone' => $o['dm_phone'] ? Phone::format((string) $o['dm_phone']) : '',
             'trip_id' => $o['trip_id'] !== null ? (int) $o['trip_id'] : 0,
-            'eta' => $stage === 'onway' ? self::eta((int) $o['dsr_id'], (float) $o['shop_lat'], (float) $o['shop_lng']) : null,
             'stage' => $stage,
             'status' => $label,
             'tone' => $tone,
@@ -156,12 +153,11 @@ final class RetailerPortal
                 'stage' => $stage,
                 'chip' => match ($stage) {
                     'arrived' => '✓ ' . Bn::digits(date('g:i', strtotime($latest ?: 'now'))) . '-তে এসেছে',
-                    'onway' => $g[0]['eta'] !== null ? 'পথে · ' . Bn::digits((string) $g[0]['eta']) . ' মিনিটে' : 'পথে আছে',
+                    'onway' => 'পথে আছে',
                     default => 'পরে আসবে',
                 },
                 'rows' => array_map(static fn(array $o): array => ['sr' => $o['sr'], 'company' => $o['company'], 'bill' => $o['bill'], 'id' => $o['id']], $g),
                 'partner' => $g[0]['partner']['name'],
-                'eta' => $g[0]['eta'],
                 'srs' => array_values(array_unique(array_map(static fn(array $o): string => ($o['sr'] === 'রেডি সেল' ? 'রেডি সেল' : 'SR ' . $o['sr']) . ' · ' . $o['company'], $g))),
                 'total' => $sum,
                 'first' => $g[0]['id'],
@@ -171,30 +167,6 @@ final class RetailerPortal
         $srs = array_unique(array_filter(array_column($orders, 'sr'), static fn(string $n): bool => $n !== 'রেডি সেল'));
 
         return ['orders' => $orders, 'cards' => $cards, 'total' => round($total, 2), 'counts' => $counts, 'sr_count' => count($srs)];
-    }
-
-    /**
-     * Minutes until the delivery man reaches the shop, from his last GPS point (≤15 min old): road ≈ 1.4 × straight
-     * line at 18 km/h, at least 2 minutes. Null when unknown.
-     */
-    public static function eta(int $dsrId, float $lat, float $lng): ?int
-    {
-        static $cache = [];
-        if ($dsrId <= 0 || $lat == 0.0) {
-            return null;
-        }
-        $p = $cache[$dsrId] ??= self::db()->fetch(
-            'SELECT lat, lng, recorded_at FROM dsr_locations WHERE dsr_id = ? ORDER BY recorded_at DESC LIMIT 1',
-            [$dsrId]
-        ) ?: [];
-        if ($p === [] || time() - strtotime((string) $p['recorded_at']) > 15 * 60) {
-            return null;
-        }
-        $x = deg2rad((float) $p['lng'] - $lng) * cos(deg2rad($lat));
-        $y = deg2rad((float) $p['lat'] - $lat);
-        $metres = sqrt($x * $x + $y * $y) * 6371000 * 1.4;
-
-        return max(2, (int) ceil($metres / (18000 / 60)));
     }
 
     /** @return list<array<string, mixed>> */
@@ -223,66 +195,6 @@ final class RetailerPortal
                 'total' => (float) $r['total'], 'sub' => $sub, 'today' => $isToday,
             ];
         }, $rows);
-    }
-
-    /** Days of a period with their companies, bill and profit, plus the totals (R3). @return array<string, mixed> */
-    public static function period(array $ids, string $from, string $to): array
-    {
-        $in = self::in($ids);
-        $profitSql = "SUM(CASE WHEN oi.mrp_pc IS NULL THEN 0 ELSE (CASE WHEN o.status IN ('delivered', 'due', 'partial') THEN oi.delivered_pcs ELSE oi.ordered_pcs END) * (oi.mrp_pc - oi.sr_rate_pc) END)";
-        $profit = [];
-        foreach (self::db()->fetchAll(
-            'SELECT ' . self::DAY_SQL . " AS d, {$profitSql} AS p FROM order_items oi JOIN orders o ON o.id = oi.order_id LEFT JOIN trips t ON t.id = o.trip_id
-             WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND " . self::DAY_SQL . ' BETWEEN ? AND ? GROUP BY d',
-            [$from, $to]
-        ) as $r) {
-            $profit[$r['d']] = (float) $r['p'];
-        }
-        $rows = self::db()->fetchAll(
-            'SELECT ' . self::DAY_SQL . ' AS d, COUNT(DISTINCT COALESCE(o.trip_id, -o.id)) AS deliveries, SUM(' . self::BILL_SQL . ") AS total,
-                    GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ' · ') AS companies
-             FROM orders o LEFT JOIN trips t ON t.id = o.trip_id JOIN companies c ON c.id = o.company_id
-             WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND " . self::DAY_SQL . ' BETWEEN ? AND ?
-             GROUP BY d ORDER BY d DESC',
-            [$from, $to]
-        );
-        $today = date('Y-m-d');
-        $yesterday = date('Y-m-d', strtotime('-1 day'));
-        $week = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
-        $out = array_map(static function (array $r) use ($today, $yesterday, $week, $profit): array {
-            $ts = strtotime((string) $r['d']);
-
-            return [
-                'date' => $r['d'], 'day' => Bn::digits(date('d', $ts)), 'month' => self::MONTHS[(int) date('n', $ts)],
-                'title' => $r['d'] === $today ? 'আজ' : ($r['d'] === $yesterday ? 'গতকাল' : $week[(int) date('w', $ts)]),
-                'companies' => (string) $r['companies'], 'deliveries' => (int) $r['deliveries'],
-                'total' => round((float) $r['total'], 2), 'profit' => isset($profit[$r['d']]) ? round($profit[$r['d']], 2) : null, 'today' => $r['d'] === $today,
-            ];
-        }, $rows);
-
-        return [
-            'from' => $from, 'to' => $to, 'rows' => $out,
-            'bought' => round(array_sum(array_column($out, 'total')), 2),
-            'profit' => $profit === [] ? null : round(array_sum($profit), 2),
-            'days' => count($out), 'deliveries' => array_sum(array_column($out, 'deliveries')),
-        ];
-    }
-
-    /** Months that have orders, newest first (R3 month picker). @return list<array{value:string, label:string}> */
-    public static function months(array $ids): array
-    {
-        $in = self::in($ids);
-        $full = [1 => 'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
-        $rows = self::db()->fetchAll(
-            'SELECT DISTINCT DATE_FORMAT(' . self::DAY_SQL . ", '%Y-%m') AS m FROM orders o LEFT JOIN trips t ON t.id = o.trip_id
-             WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' ORDER BY m DESC LIMIT 12"
-        );
-        $list = array_column($rows, 'm');
-        if (!in_array(date('Y-m'), $list, true)) {
-            array_unshift($list, date('Y-m'));
-        }
-
-        return array_map(static fn(string $m): array => ['value' => $m, 'label' => $full[(int) substr($m, 5, 2)] . ' ' . Bn::digits(substr($m, 0, 4))], $list);
     }
 
     /** Last 7 days (today included): bought total and profit at MRP. @return array{bought: float, profit: float|null} */
@@ -332,17 +244,16 @@ final class RetailerPortal
         }
 
         foreach (self::db()->fetchAll(
-            "SELECT t.id, MAX(t.dispatched_at) AS dispatched_at, MAX(t.trip_date) AS trip_date, MAX(dm.name) AS dm, MAX(t.dsr_id) AS dsr_id, MAX(r.lat) AS lat, MAX(r.lng) AS lng, MAX(pa.name) AS partner, SUM(o.order_sr_total) AS total,
+            "SELECT t.id, MAX(t.dispatched_at) AS dispatched_at, MAX(t.trip_date) AS trip_date, MAX(dm.name) AS dm, MAX(pa.name) AS partner, SUM(o.order_sr_total) AS total,
                     GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ' + ') AS companies
              FROM orders o JOIN trips t ON t.id = o.trip_id JOIN delivery_men dm ON dm.id = t.dsr_id JOIN companies c ON c.id = o.company_id
-             JOIN partners pa ON pa.id = o.partner_id JOIN retailers r ON r.id = o.retailer_id
+             JOIN partners pa ON pa.id = o.partner_id
              WHERE o.retailer_id IN ({$in}) AND o.status <> 'cancelled' AND t.dispatched_at >= ?
              GROUP BY t.id ORDER BY MAX(t.dispatched_at) DESC",
             [$since]
         ) as $r) {
-            $eta = $r['trip_date'] === date('Y-m-d') ? self::eta((int) $r['dsr_id'], (float) $r['lat'], (float) $r['lng']) : null;
-            $ev[] = ['kind' => 'onway', 'at' => $r['dispatched_at'], 'title' => "{$r['dm']} আসছে · {$r['companies']}-এর মাল", 'eta' => $eta,
-                'short' => "{$r['dm']} আসছে", 'detail' => "{$r['partner']} · {$r['companies']}" . ($eta !== null ? ' · ' . Bn::digits((string) $eta) . ' মিনিটে' : ' · ' . self::money((float) $r['total'])), 'date' => $r['trip_date']];
+            $ev[] = ['kind' => 'onway', 'at' => $r['dispatched_at'], 'title' => "{$r['dm']} আসছে · {$r['companies']}-এর মাল",
+                'short' => "{$r['dm']} আসছে", 'detail' => "{$r['partner']} · {$r['companies']} · " . self::money((float) $r['total']), 'date' => $r['trip_date']];
         }
 
         foreach (self::db()->fetchAll(

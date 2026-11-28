@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../core/tracker.dart';
 import '../ui/common.dart';
 import '../ui/hkit.dart';
-import '../ui/motion.dart';
 import '../ui/pwa_kit.dart';
 import '../ui/update.dart';
 import 'order_page.dart';
@@ -60,10 +59,10 @@ class _SrHomeState extends State<SrHome> {
               color: HC.bg,
               child: Stack(children: [
                 IndexedStack(index: _tab, children: [
-                  TabFade(active: _tab == 0, child: SrDashboardPage(onNewOrder: () => _go(1), onHistory: () => _go(2))),
-                  TabFade(active: _tab == 1, child: lazy(1, () => OrderPage(onBack: () => _go(0), active: _tab == 1))),
-                  TabFade(active: _tab == 2, child: lazy(2, () => const SrHistoryPage())),
-                  TabFade(active: _tab == 3, child: lazy(3, () => const SrProfilePage())),
+                  SrDashboardPage(onNewOrder: () => _go(1), onHistory: () => _go(2)),
+                  lazy(1, () => OrderPage(onBack: () => _go(0), active: _tab == 1)),
+                  lazy(2, () => const SrHistoryPage()),
+                  lazy(3, () => const SrProfilePage()),
                 ]),
                 if (_tab != 1) Positioned(top: top + 6, left: 0, right: 0, child: const Center(child: SyncChip())),
               ]),

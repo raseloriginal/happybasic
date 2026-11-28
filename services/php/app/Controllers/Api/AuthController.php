@@ -131,7 +131,7 @@ final class AuthController extends Controller
             );
 
             return $base + ($r === null ? [] : [
-                'sr_id' => (int) $r['id'], 'code' => $r['code'] ?: 'SR-' . str_pad((string) $r['id'], 4, '0', STR_PAD_LEFT), 'area' => $r['area'], 'company' => $r['company'], 'partner' => $r['partner'],
+                'sr_id' => (int) $r['id'], 'code' => $r['code'], 'area' => $r['area'], 'company' => $r['company'], 'partner' => $r['partner'],
                 'photo' => ApiUrl::abs($r['photo_path']), 'daily_target' => (float) $r['daily_target'],
             ]);
         }

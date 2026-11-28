@@ -54,9 +54,6 @@ final class SrController extends Controller
                 'today' => SrStats::range($sr['id'], $today, $today),
                 'month' => SrStats::range($sr['id'], date('Y-m-01'), $today),
                 'day_completed' => Order::isDayCompleted($sr['id'], $today),
-                'no_order' => \App\Models\SrReport::noOrder((int) $sr['id'], $today),
-                'notif_unread' => count(array_filter(\App\Models\SrReport::notifications($sr, Database::getInstance()->fetch('SELECT notif_seen_at FROM users WHERE id = ?', [$sr['user_id']])['notif_seen_at'] ?? null), static fn(array $e): bool => $e['unread'])),
-                'duty' => \App\Models\SrReport::duty((int) $sr['id'], $today),
             ];
         });
     }
@@ -71,7 +68,7 @@ final class SrController extends Controller
                 $date = $last['d'] ?? date('Y-m-d');
             }
 
-            return ['date' => $date, 'today' => date('Y-m-d'), 'orders' => Order::srHistory($sr, $date), 'no_order' => \App\Models\SrReport::noOrder((int) $sr['id'], $date)];
+            return ['date' => $date, 'today' => date('Y-m-d'), 'orders' => Order::srHistory($sr, $date)];
         });
     }
 
@@ -95,41 +92,7 @@ final class SrController extends Controller
                 'profile' => $profile,
                 'month' => SrStats::range($sr['id'], date('Y-m-01'), $today),
                 'month_label' => date('F Y'),
-                'no_order' => \App\Models\SrReport::noOrder((int) $sr['id'], $date),
-                'month_goal' => \App\Models\SrReport::monthGoal($sr),
             ];
-        });
-    }
-
-    /** SR day report (SRReport): duty, target, visits, order → delivery, shops, reasons, products, 7 days. */
-    public function report(Request $request): Response
-    {
-        return $this->action(function () use ($request): array {
-            $sr = SrAuthMiddleware::sr();
-
-            return \App\Models\SrReport::build($sr, $this->date((string) $request->query('date', '')) ?? date('Y-m-d'));
-        });
-    }
-
-    /** What happened to the SR's orders (delivered, short, cancelled) and new shops, newest first. */
-    public function notifications(): Response
-    {
-        return $this->action(function (): array {
-            $sr = SrAuthMiddleware::sr();
-            $seen = Database::getInstance()->fetch('SELECT notif_seen_at FROM users WHERE id = ?', [$sr['user_id']])['notif_seen_at'] ?? null;
-            $items = \App\Models\SrReport::notifications($sr, $seen);
-
-            return ['items' => $items, 'unread' => count(array_filter($items, static fn(array $e): bool => $e['unread']))];
-        });
-    }
-
-    public function markSeen(): Response
-    {
-        return $this->action(function (): array {
-            $sr = SrAuthMiddleware::sr();
-            Database::getInstance()->execute('UPDATE users SET notif_seen_at = NOW() WHERE id = ?', [$sr['user_id']]);
-
-            return ['ok' => true];
         });
     }
 

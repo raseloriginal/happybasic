@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Support\Bn;
 use App\Support\HttpError;
 use App\Support\Phone;
 use Core\Database;
@@ -59,7 +58,6 @@ final class DsrDelivery
             'settlement_status' => $t['settlement_status'],
             'review_note' => $t['review_note'],
             'dispatched_at' => $t['dispatched_at'],
-            'dsr_id' => (int) ($t['dsr_id'] ?? 0),
             'sr_ids' => array_map('intval', array_filter(explode(',', (string) $t['sr_ids']))),
         ];
     }
@@ -248,12 +246,6 @@ final class DsrDelivery
                 ];
             }
             $st = &$stops[$rid];
-            if (!$o['is_ready_sale']) {
-                $st['_ordered_at'] = min($st['_ordered_at'] ?? $o['created_at'], $o['created_at']);
-            }
-            if ($o['delivered_at']) {
-                $st['_delivered_at'] = max($st['_delivered_at'] ?? '', (string) $o['delivered_at']);
-            }
             $resolved = !in_array($o['status'], ['assigned', 'pending'], true);
             if ($o['sr_name'] && !in_array($o['sr_name'], $st['sr_names'], true)) {
                 $st['sr_names'][] = $o['sr_name'];
@@ -292,55 +284,11 @@ final class DsrDelivery
             $st['due_amount'] = round($st['due_amount'] + (float) $o['due_amount'], 2);
             if ($o['status'] === 'cancelled' && $o['cancel_reason']) {
                 $st['cancel_reason'] = $o['cancel_reason'];
-            } elseif ($o['cancel_reason']) {
-                // why the shop took less (kept apart so a later save does not read it as a cancel reason)
-                $st['short_reason'] = preg_replace('/^DSR:\s*/i', '', (string) $o['cancel_reason']);
             }
             unset($st);
         }
 
-        // DM7 "হিস্ট্রি · অটো": order → van load → reached the shop (GPS) → delivered. Nothing stored; GPS read back.
-        $points = [];
-        if (!empty($trip['dsr_id']) && !empty($trip['dispatched_at'])) {
-            $points = $db->fetchAll(
-                'SELECT lat, lng, recorded_at FROM dsr_locations WHERE dsr_id = ? AND recorded_at BETWEEN ? AND ? ORDER BY recorded_at',
-                [$trip['dsr_id'], $trip['dispatched_at'], $trip['date'] . ' 23:59:59']
-            );
-        }
-        $bnTime = static fn(?string $at): string => $at ? Bn::digits(date('g:i', strtotime($at))) : '';
         foreach ($stops as &$st) {
-            $tl = [];
-            $done = $st['_delivered_at'] ?? null;
-            $arrived = null;
-            if ($st['lat'] != 0.0 && $points !== []) {
-                foreach ($points as $p) {
-                    if ($done !== null && $p['recorded_at'] > $done) {
-                        break;
-                    }
-                    $dx = deg2rad((float) $p['lng'] - $st['lng']) * cos(deg2rad($st['lat']));
-                    $dy = deg2rad((float) $p['lat'] - $st['lat']);
-                    if (sqrt($dx * $dx + $dy * $dy) * 6371000 <= 50) {
-                        $arrived = (string) $p['recorded_at'];
-                        break;
-                    }
-                }
-            }
-            if ($done !== null) {
-                $tl[] = ['key' => 'done', 'title' => 'ডেলিভারি সম্পন্ন', 'time' => $bnTime($done)];
-            }
-            if ($arrived !== null) {
-                $tl[] = ['key' => 'arrived', 'title' => 'দোকানে পৌঁছেছি', 'sub' => 'GPS মিলেছে' . ($st['address'] !== '' ? ' · ' . $st['address'] : ''), 'time' => $bnTime($arrived)];
-            }
-            if (!empty($trip['dispatched_at'])) {
-                $tl[] = ['key' => 'load', 'title' => 'ভ্যানে লোড', 'sub' => 'ট্রিপ ' . $trip['code'], 'time' => $bnTime($trip['dispatched_at'])];
-            }
-            if (!empty($st['_ordered_at'])) {
-                $day = date('Y-m-d', strtotime($st['_ordered_at']));
-                $when = $day === date('Y-m-d') ? 'আজ' : ($day === date('Y-m-d', strtotime('-1 day')) ? 'গতকাল' : Bn::digits(date('j/n', strtotime($day))));
-                $tl[] = ['key' => 'order', 'title' => 'অর্ডার', 'sub' => ($st['sr_names'] ? 'SR ' . implode(', ', $st['sr_names']) . ' · ' : '') . $when, 'time' => $when];
-            }
-            $st['timeline'] = $tl;
-            unset($st['_ordered_at'], $st['_delivered_at']);
             $keys = array_column($st['companies'], 'status_key');
             $st['status'] = match (true) {
                 in_array('assigned', $keys, true) || in_array('pending', $keys, true) => 'Pending',
@@ -388,7 +336,6 @@ final class DsrDelivery
         }
 
         $reason = trim((string) ($d['cancel_reason'] ?? ''));
-        $shortReason = trim((string) ($d['short_reason'] ?? ''));
         $van = self::vanStock($trip['id']);
         $lines = [];
         $usedPcs = [];
@@ -525,7 +472,7 @@ final class DsrDelivery
         $collect = round(max(0.0, $paid - $shouldPay), 2);
         $left = min($paid, $shouldPay);
 
-        $db->transaction(static function (Database $db) use ($trip, $retailerId, $orders, $input, $lines, $bills, $damages, $left, $collect, $reason, $shortReason): void {
+        $db->transaction(static function (Database $db) use ($trip, $retailerId, $orders, $input, $lines, $bills, $damages, $left, $collect, $reason): void {
             foreach ($input as $oid => $o) {
                 $order = $orders[$oid];
                 if ($o['cancelled']) {
@@ -538,10 +485,8 @@ final class DsrDelivery
                     continue;
                 }
 
-                $short = false;
                 foreach ($db->fetchAll('SELECT * FROM order_items WHERE order_id = ?', [$oid]) as $it) {
                     $pcs = $lines[$oid][(int) $it['product_id']] ?? 0;
-                    $short = $short || $pcs < (int) $it['ordered_pcs'];
                     $db->execute(
                         'UPDATE order_items SET delivered_pcs = ?, delivery_oc = ? WHERE id = ?',
                         [$pcs, round($pcs * ((float) $it['sr_rate_pc'] - (float) $it['base_rate_pc']), 2), $it['id']]
@@ -555,9 +500,9 @@ final class DsrDelivery
                 $status = $due <= 0.004 ? 'delivered' : ($pay > 0 ? 'partial' : 'due');
                 $fee = PlatformFee::amount($b['base'], (float) ($order['platform_fee_rate'] ?? 0));
                 $db->execute(
-                    'UPDATE orders SET status = ?, cancel_reason = ?, delivered_base_total = ?, delivered_sr_total = ?, delivery_oc = ?,
+                    'UPDATE orders SET status = ?, cancel_reason = NULL, delivered_base_total = ?, delivered_sr_total = ?, delivery_oc = ?,
                         damage_amount = ?, paid_amount = ?, due_amount = ?, platform_fee_amount = ?, delivered_at = NOW() WHERE id = ?',
-                    [$status, $short && $shortReason !== '' ? mb_substr('DSR: ' . $shortReason, 0, 255) : null, $b['base'], $b['sr'], round($b['sr'] - $b['base'], 2), $b['damage'], $pay, max(0, $due), $fee, $oid]
+                    [$status, $b['base'], $b['sr'], round($b['sr'] - $b['base'], 2), $b['damage'], $pay, max(0, $due), $fee, $oid]
                 );
             }
 

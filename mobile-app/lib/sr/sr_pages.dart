@@ -14,9 +14,6 @@ import '../ui/common.dart';
 import '../ui/hkit.dart';
 import '../ui/printer_page.dart';
 import '../ui/pwa_kit.dart';
-import '../ui/motion.dart';
-import 'sr_notifications.dart';
-import 'sr_report.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
@@ -109,14 +106,7 @@ class SrDashboardPage extends StatelessWidget {
               leading: LetterAvatar(name, size: 44, bg: HC.lilac, fg: HC.ink, fontSize: 17, image: photo == null ? null : NetImage(photo)),
               kicker: 'SR · ${profile['company']} · ${profile['partner'] ?? ''}',
               title: name,
-              trailing: GlassBtn(
-                icon: Ic.bell, label: 'নোটিফিকেশন',
-                badge: int0(d['notif_unread']) > 0 ? (int0(d['notif_unread']) > 9 ? '৯+' : bn(int0(d['notif_unread']))) : null,
-                onTap: () async {
-                  await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SrNotificationsPage()));
-                  reload();
-                },
-              ),
+              trailing: GlassBtn(icon: icLogout, label: 'সাইন আউট', onTap: () => signOut(context)),
             ),
             const SizedBox(height: 10),
             Row(children: [
@@ -134,7 +124,7 @@ class SrDashboardPage extends StatelessWidget {
               lift: true, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
               child: HStrip(style: StripStyle.plain, valueSize: 18, [
                 HStat('মেমো', bn(orders), labelOnTop: false),
-                HStat('দেয়নি', bn(((d['no_order'] as List?) ?? const []).length), color: HC.ink2, labelOnTop: false),
+                HStat('দোকান', bn(int0(today['retailers'])), color: HC.ink2, labelOnTop: false),
                 HStat('ওভার', '+${tk(today['over_oc'])}', color: HC.blue, labelOnTop: false),
                 HStat('কমিশন', '−${tk(num0(today['comm_oc']).abs())}', color: HC.red, labelOnTop: false),
               ]),
@@ -189,6 +179,8 @@ class SrProfilePage extends StatefulWidget {
 }
 
 class _SrProfilePageState extends State<SrProfilePage> {
+  String? _date;
+
   Future<void> _pickPhoto(VoidCallback reload) async {
     final auth = context.read<AuthState>();
     final x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 800, imageQuality: 85);
@@ -201,129 +193,186 @@ class _SrProfilePageState extends State<SrProfilePage> {
     }
   }
 
-  static const _months = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
-
-  /// SR7 · আমি: photo and ID, this month's target, the day report, account links, logout.
   @override
   Widget build(BuildContext context) {
     context.watch<AuthState>();
     return AsyncBody(
+      key: ValueKey(_date),
       sky: true,
-      load: () => loadCached('sr_profile_me', () => ApiClient.get('/sr/profile')),
+      load: () => loadCached('sr_profile_${_date ?? 'last'}', () => ApiClient.get('/sr/profile', query: {'date': _date})),
       builder: (context, d, reload) {
         final p = _m(d['profile']);
         final photo = ApiClient.asset(p['photo']);
+        final date = d['date'].toString();
+        final day = _m(d['day_summary']);
+        final s = _m(day['stats']);
+        final products = (day['products'] as List?)?.map(_m).toList() ?? [];
         final month = _m(d['month']);
-        final sold = num0(month['value']);
-        final goal = num0(d['month_goal']);
-        final pct = goal > 0 ? (sold / goal * 100).round() : 0;
-        final now = DateTime.now();
-        final daysLeft = DateTime(now.year, now.month + 1, 0).day - now.day;
+        final monthValue = num0(month['value']);
+        final monthTarget = num0(p['monthly_target']);
+        final monthPct = monthTarget > 0 ? (monthValue / monthTarget * 100).round().clamp(0, 100) : 0;
+        final net = num0(s['oc']);
+        final ocBal = num0(p['oc_balance']);
+        final today = d['today']?.toString() ?? todayYmd();
         final name = '${p['name'] ?? ''}';
-        Widget link(String label, VoidCallback onTap, {bool first = false, Color color = HC.ink}) => Pressable(
-              scale: .99,
-              child: InkWell(
-                onTap: onTap,
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 50),
-                  decoration: BoxDecoration(border: first ? null : const Border(top: BorderSide(color: HC.line))),
-                  child: Row(children: [
-                    Expanded(child: Text(label, style: hs(15, w: w7, color: color))),
-                    if (color == HC.ink) Text('›', style: hs(20, color: HC.muted)),
-                  ]),
-                ),
-              ),
-            );
         return SkyBox(
-          height: 250,
+          height: 270,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Column(children: [
+            Row(children: [
               Semantics(
                 button: true, label: 'ছবি পরিবর্তন করুন',
                 child: GestureDetector(
                   onTap: () => _pickPhoto(reload),
-                  child: Container(
-                    width: 72, height: 72,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0x38FFFFFF), spreadRadius: 5)]),
-                    child: LetterAvatar(name, size: 72, fontSize: 28, image: photo == null ? null : NetImage(photo)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(name, textAlign: TextAlign.center, style: hs(20, w: w7, color: Colors.white)),
-              Text('SR · ${p['company'] ?? ''} · ${p['partner'] ?? ''} · ID ${p['code'] ?? ''}', textAlign: TextAlign.center,
-                  maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.onSky)),
-            ]),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24),
-                  boxShadow: const [BoxShadow(color: Color(0x240A1640), blurRadius: 40, offset: Offset(0, 18))]),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Row(children: [
-                  Expanded(child: Text('${_months[now.month - 1]}ের লক্ষ্য', style: hs(14, w: w7))),
-                  if (goal > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(color: HC.soft, borderRadius: BorderRadius.circular(999)),
-                      child: Text('${bn(pct)}%', style: hs(12, w: w7, color: HC.blue)),
-                    ),
-                ]),
-                const SizedBox(height: 12),
-                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Expanded(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(tk(sold), style: hs(26, w: w8, num: true, h: 1.1)))),
-                  if (goal > 0) Text('/ ${tk(goal)}', style: hs(13, color: HC.muted, num: true)),
-                ]),
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: Container(
-                    height: 10, color: HC.chip,
-                    alignment: Alignment.centerLeft,
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: goal > 0 ? (sold / goal).clamp(0, 1).toDouble() : 0),
-                      duration: const Duration(milliseconds: 900), curve: kEase,
-                      builder: (_, v, __) => FractionallySizedBox(
-                        widthFactor: v,
-                        child: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [HC.sky, Color(0xFF5B8CFF)]))),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  goal <= 0
-                      ? 'লক্ষ্য এখনো ঠিক করা হয়নি'
-                      : (sold >= goal ? 'লক্ষ্য পূরণ হয়েছে ✓ · ${bn(daysLeft)} দিন আছে' : 'আর ${tk(goal - sold)} বাকি · ${bn(daysLeft)} দিন আছে'),
-                  style: hs(12, color: HC.muted, num: true),
-                ),
-              ]),
-            ),
-            gap12,
-            HBtn('দিনের রিপোর্ট তৈরি করুন', icon: Ic.doc, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SrReportPage()))),
-            gap12,
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: HC.line)),
-              child: Column(children: [
-                link('পাসওয়ার্ড পরিবর্তন', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePasswordPage())), first: true),
-                link('ব্লুটুথ প্রিন্টার', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrinterPage()))),
-                link('সিঙ্ক অবস্থা', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PendingPage()))),
-                Container(
-                  constraints: const BoxConstraints(minHeight: 46),
-                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: HC.line))),
-                  child: Row(children: [
-                    Expanded(child: Text('অ্যাপ সংস্করণ', style: hs(13, color: HC.muted))),
-                    Text('${ApiClient.versionName} (${ApiClient.buildNumber})', style: hs(13, color: HC.muted, num: true)),
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    LetterAvatar(name, size: 54, ring: true, fontSize: 22, image: photo == null ? null : NetImage(photo)),
+                    Positioned(right: -2, bottom: -2, child: Container(
+                      width: 20, height: 20,
+                      decoration: BoxDecoration(color: HC.ink, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                      child: const Icon(Icons.photo_camera_rounded, size: 10, color: Colors.white),
+                    )),
                   ]),
                 ),
-                link('লগআউট', () => signOut(context), color: HC.red),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(19, w: w7, color: Colors.white)),
+                Text('SR · ${p['company']} · ${p['partner']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.onSky)),
+              ])),
+              GestureDetector(
+                onTap: () => signOut(context),
+                child: Container(
+                  height: 40, padding: const EdgeInsets.symmetric(horizontal: 12), alignment: Alignment.center,
+                  decoration: BoxDecoration(color: const Color(0x24FFFFFF), border: Border.all(color: const Color(0x38FFFFFF)), borderRadius: BorderRadius.circular(12)),
+                  child: Text('লগআউট', style: hs(12, w: w6, color: Colors.white)),
+                ),
+              ),
+            ]),
+            gap12,
+            SkyDateBar(date: date, today: today, sub: 'অর্ডার সারাংশ', onChange: (v) => setState(() => _date = v)),
+            gap12,
+            HCard(
+              lift: true, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('নিট · আমার পাওনা', style: hs(12, color: HC.muted)),
+                    Text(sMoney(net), style: hs(30, w: w8, color: net < 0 ? HC.red : HC.blue, h: 1.15, num: true)),
+                  ])),
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Text('${bn(int0(s['orders']))}টি মেমো · মোট অর্ডার', style: hs(12, color: HC.muted)),
+                    Text(tk(s['value']), style: hs(17, w: w7, num: true)),
+                  ]),
+                ]),
+                gap12,
+                HStrip(style: StripStyle.soft, [
+                  HStat('ওভার', '+${tk(s['over_oc'])}', color: HC.blue),
+                  HStat('কমিশন', '−${tk(num0(s['comm_oc']).abs())}', color: HC.red),
+                  HStat('নিট', sMoney(net)),
+                ]),
               ]),
             ),
-            const SizedBox(height: 12),
+            gap12,
+            HCard(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                _ProdRow(const ['পণ্য', 'অর্ডার', 'গেছে', 'নিয়েছে', 'ফেরত'], head: true),
+                if (products.isEmpty)
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text('এই তারিখে কোনো পণ্যের হিসাব নেই।', textAlign: TextAlign.center, style: hs(12, color: HC.muted)))
+                else
+                  for (var i = 0; i < products.length; i++)
+                    _ProdRow([
+                      '${products[i]['name']}',
+                      bn(int0(products[i]['ordered_pcs'])),
+                      int0(products[i]['dispatched_pcs']) > 0 ? bn(int0(products[i]['dispatched_pcs'])) : '—',
+                      int0(products[i]['delivered_pcs']) > 0 ? bn(int0(products[i]['delivered_pcs'])) : '—',
+                      int0(products[i]['returned_pcs']) > 0 ? bn(int0(products[i]['returned_pcs'])) : '—',
+                    ], first: i == 0, soft: i.isOdd),
+                if (products.isNotEmpty && products.every((x) => int0(x['dispatched_pcs']) == 0))
+                  Padding(padding: const EdgeInsets.only(top: 6), child: Text('ডেলিভারি হলে গেছে / নিয়েছে এখানে আসবে', style: hs(11, color: HC.muted))),
+              ]),
+            ),
+            gap12,
+            HCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                HSec('মাসিক পারফরম্যান্স · ${monthYearBn()}', trailing: monthTarget > 0 ? '${bn(monthPct)}% অর্জিত' : null, size: 15),
+                gap8,
+                Row(children: [
+                  Expanded(child: Text('মাসিক অর্ডার', style: hs(12, color: HC.muted))),
+                  Text.rich(TextSpan(style: hs(14, w: w7, num: true), children: [
+                    TextSpan(text: tk(monthValue)),
+                    if (monthTarget > 0) TextSpan(text: ' / ${tk(monthTarget)}', style: hs(12, color: HC.muted, num: true)),
+                  ])),
+                ]),
+                const SizedBox(height: 6),
+                SProgress(monthPct.toDouble()),
+                gap12,
+                HStrip(style: StripStyle.soft, valueSize: 16, [
+                  HStat('মেমো', bn(int0(month['orders']))),
+                  HStat('দোকান', bn(int0(month['retailers']))),
+                  HStat('ডেলিভারি হার', int0(month['done']) > 0 ? '${bn(month['delivery_rate'])}%' : '—'),
+                  HStat('O/C ব্যালেন্স', sMoney(ocBal), color: ocBal < 0 ? HC.red : HC.blue),
+                ]),
+              ]),
+            ),
+            gap12,
+            HList(padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+              _Link('পাসওয়ার্ড পরিবর্তন', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePasswordPage()))),
+              _Link('ব্লুটুথ প্রিন্টার', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrinterPage()))),
+              _Link('সিঙ্ক অবস্থা', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PendingPage()))),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Row(children: [
+                  Expanded(child: Text('অ্যাপ সংস্করণ', style: hs(14, color: HC.ink2))),
+                  Text('${ApiClient.versionName} (${ApiClient.buildNumber})', style: hs(12, color: HC.muted, num: true)),
+                ]),
+              ),
+            ]),
           ]),
         );
       },
     );
   }
+}
+
+class _ProdRow extends StatelessWidget {
+  const _ProdRow(this.cells, {this.head = false, this.first = false, this.soft = false});
+  final List<String> cells;
+  final bool head, first, soft;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.symmetric(vertical: head ? 0 : 9).copyWith(bottom: head ? 4 : 9),
+        decoration: BoxDecoration(border: head || first ? null : const Border(top: BorderSide(color: HC.line))),
+        child: Row(children: [
+          Expanded(
+            flex: 11,
+            child: head
+                ? Text(cells[0], style: hs(11, color: HC.muted))
+                : Row(children: [
+                    LetterAvatar(cells[0], size: 26, radius: 8, bg: soft ? HC.soft : HC.chip, fg: soft ? HC.blue : HC.ink2, fontSize: 10),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(cells[0], maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(13, w: w6))),
+                  ]),
+          ),
+          for (var i = 1; i < cells.length; i++)
+            Expanded(flex: 4, child: Text(cells[i], textAlign: TextAlign.right,
+                style: head ? hs(11, color: HC.muted) : hs(13, w: i == 1 ? w7 : FontWeight.w400, color: i == 1 ? HC.ink : (i == 4 && cells[i] != '—' ? HC.red : HC.muted), num: true))),
+        ]),
+      );
+}
+
+class _Link extends StatelessWidget {
+  const _Link(this.label, this.onTap);
+  final String label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(children: [
+            Expanded(child: Text(label, style: hs(14, w: w6))),
+            const Svg('<path d="M9 5l7 7-7 7"/>', size: 16, color: HC.muted, stroke: 1.8),
+          ]),
+        ),
+      );
 }

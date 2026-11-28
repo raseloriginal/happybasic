@@ -19,7 +19,6 @@ import '../ui/me_layer.dart';
 import '../ui/tracker_banner.dart';
 import 'add_retailer.dart';
 import 'order_editor.dart';
-import '../ui/loader.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
@@ -176,7 +175,7 @@ class _OrderPageState extends State<OrderPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const HbLoader();
+    if (_loading) return const Center(child: CircularProgressIndicator());
     if (_data == null) {
       return ListView(padding: const EdgeInsets.all(20), children: [
         const SizedBox(height: 80),

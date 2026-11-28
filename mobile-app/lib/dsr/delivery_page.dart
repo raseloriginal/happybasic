@@ -19,7 +19,6 @@ import '../ui/me_layer.dart';
 import '../ui/pwa_kit.dart';
 import 'ready_sale_page.dart';
 import 'stop_page.dart';
-import '../ui/loader.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
@@ -205,7 +204,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    if (_loading) return const HbLoader();
+    if (_loading) return const Center(child: CircularProgressIndicator());
     if (_data == null) {
       return ListView(padding: const EdgeInsets.all(20), children: [
         const SizedBox(height: 80),
@@ -327,8 +326,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
     final st = '${s['status']}';
     final dot = stopDot(s, number);
     final pending = st == 'Pending';
-    final rawNote = '${s['cancel_reason'] ?? ''}'.isNotEmpty ? '${s['cancel_reason']}' : '${s['short_reason'] ?? ''}';
-    final note = cancelReasonBn(rawNote.replaceFirst(RegExp(r'^DSR:\s*'), ''));
+    final note = '${s['cancel_reason'] ?? ''}';
     final dist = _dist(s);
     final sub = !pending && note.isNotEmpty
         ? note

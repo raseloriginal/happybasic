@@ -33,30 +33,12 @@ final class RetailerApiController extends Controller
         });
     }
 
-    /** R3: ?range=7|30|month (&month=YYYY-MM for a past month). Without range: the old 60-day list + 7-day summary. */
-    public function history(Request $request): Response
+    public function history(): Response
     {
-        return $this->action(function () use ($request): array {
+        return $this->action(function (): array {
             $ids = RetailerAuthMiddleware::retailer()['ids'];
-            $range = (string) $request->query('range', '');
-            if ($range === '') {
-                return ['rows' => RetailerPortal::history($ids), 'week' => RetailerPortal::weekSummary($ids)];
-            }
-            $month = (string) $request->query('month', '');
-            if ($range === 'month') {
-                $m = $month !== '' ? \DateTime::createFromFormat('!Y-m', $month) : new \DateTime('first day of this month');
-                if ($m === false) {
-                    throw new HttpError('মাস সঠিক নয়।', 422);
-                }
-                $from = $m->format('Y-m-01');
-                $to = min($m->format('Y-m-t'), date('Y-m-d'));
-            } else {
-                $days = $range === '30' ? 30 : 7;
-                $from = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
-                $to = date('Y-m-d');
-            }
 
-            return RetailerPortal::period($ids, $from, $to) + ['range' => $range, 'month' => substr($from, 0, 7), 'months' => RetailerPortal::months($ids)];
+            return ['rows' => RetailerPortal::history($ids), 'week' => RetailerPortal::weekSummary($ids)];
         });
     }
 
