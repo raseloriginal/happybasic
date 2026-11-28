@@ -50,6 +50,9 @@ $router->group(['prefix' => 'api/v1', 'middleware' => [ApiMiddleware::class]], s
         $router->get('/dashboard', [SrController::class, 'dashboard']);
         $router->get('/history', [SrController::class, 'history']);
         $router->get('/profile', [SrController::class, 'profile']);
+        $router->get('/report', [SrController::class, 'report']);
+        $router->get('/notifications', [SrController::class, 'notifications']);
+        $router->post('/notifications/seen', [SrController::class, 'markSeen']);
         $router->post('/profile/photo', [SrProfile::class, 'photo']);
         $router->post('/track', [SrController::class, 'track']);
 

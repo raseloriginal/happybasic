@@ -57,6 +57,8 @@ final class Salesman
             'partner_profit_share' => $isDealer && $r['partner_profit_share'] !== null ? (float) $r['partner_profit_share'] : null,
             'status' => Format::status($r['status']),
             'daily_target' => (float) ($r['daily_target'] ?? 0),
+            'monthly_target' => (float) ($r['monthly_target'] ?? 0),
+            'code' => (string) ($r['code'] ?? ''),
         ];
     }
 
@@ -87,6 +89,13 @@ final class Salesman
         }
 
         Partner::assertUsable((int) $d['partner_id']);
+
+        if (!empty($d['code'])) {
+            $taken = self::db()->fetch('SELECT id FROM salesmen WHERE code = ? AND deleted_at IS NULL AND id <> ?', [$d['code'], (int) ($current['id'] ?? 0)]);
+            if ($taken !== null) {
+                throw new HttpError('This SR ID is already used by another SR.', 422, ['code' => ['This SR ID is already used.']]);
+            }
+        }
 
         $company = self::db()->fetch('SELECT * FROM companies WHERE id = ? AND deleted_at IS NULL', [$d['company_id']]);
         $keepsCompany = $current !== null && (int) $current['company_id'] === (int) $d['company_id'];
@@ -167,8 +176,8 @@ final class Salesman
             self::syncLink($db, $d);
             $userId = User::createAccount($d['name'], $d['phone'], $d['password'], 'sr', $d['status']);
             $db->execute(
-                'INSERT INTO salesmen (partner_id, company_id, user_id, name, phone, joining_date, status, daily_target) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?)',
-                [$d['partner_id'], $d['company_id'], $userId, $d['name'], $d['phone'], $d['status'], $d['daily_target']]
+                'INSERT INTO salesmen (partner_id, company_id, user_id, name, phone, joining_date, status, daily_target, monthly_target, code) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?)',
+                [$d['partner_id'], $d['company_id'], $userId, $d['name'], $d['phone'], $d['status'], $d['daily_target'], $d['monthly_target'], $d['code']]
             );
 
             return self::findOrFail((int) $db->lastInsertId());
@@ -185,8 +194,8 @@ final class Salesman
             self::syncLink($db, $d, $id);
             User::syncAccount((int) $current['user_id'], $d['name'], $d['phone'], $d['status'], $d['password'] ?? null);
             $db->execute(
-                'UPDATE salesmen SET partner_id = ?, company_id = ?, name = ?, phone = ?, status = ?, daily_target = ? WHERE id = ?',
-                [$d['partner_id'], $d['company_id'], $d['name'], $d['phone'], $d['status'], $d['daily_target'], $id]
+                'UPDATE salesmen SET partner_id = ?, company_id = ?, name = ?, phone = ?, status = ?, daily_target = ?, monthly_target = ?, code = ? WHERE id = ?',
+                [$d['partner_id'], $d['company_id'], $d['name'], $d['phone'], $d['status'], $d['daily_target'], $d['monthly_target'], $d['code'], $id]
             );
 
             return self::findOrFail($id);

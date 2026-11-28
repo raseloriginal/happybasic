@@ -80,6 +80,8 @@ final class SalesmanController extends AdminController
             'company_id' => 'required|integer',
             'password' => $this->passwordRule($creating),
             'daily_target' => 'nullable|numeric|min:0|max:9999999999',
+            'monthly_target' => 'nullable|numeric|min:0|max:9999999999',
+            'code' => 'nullable|string|max:30',
         ], [
             'partner_id.required' => 'Please select a partner.',
             'company_id.required' => 'Please select a company.',
@@ -94,6 +96,8 @@ final class SalesmanController extends AdminController
         $data['company_id'] = (int) $data['company_id'];
         $data['status'] = $this->statusFrom($request);
         $data['daily_target'] = round((float) ($data['daily_target'] ?? 0), 2);
+        $data['monthly_target'] = round((float) ($data['monthly_target'] ?? 0), 2);
+        $data['code'] = trim((string) ($data['code'] ?? '')) ?: null;
 
         return $data;
     }

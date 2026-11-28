@@ -92,11 +92,17 @@ final class DeliveryController extends DsrController
                 throw new HttpError('তালিকা থেকে বাতিলের কারণ নির্বাচন করুন।', 422);
             }
 
+            $short = trim((string) $request->input('short_reason', ''));
+            if ($short !== '' && !in_array(explode(' (', $short)[0], DsrDelivery::CANCEL_REASONS, true)) {
+                throw new HttpError('তালিকা থেকে কম নেওয়ার কারণ নির্বাচন করুন।', 422);
+            }
+
             DsrDelivery::saveStop($this->dsr(), $retailer, [
                 'orders' => $orders,
                 'damages' => array_values($damages),
                 'paid' => (float) $request->input('paid', 0),
                 'cancel_reason' => mb_substr($reason, 0, 240),
+                'short_reason' => mb_substr($short, 0, 240),
             ]);
             $this->log('Updated', "DSR saved delivery for retailer #{$retailer}");
             $allCancelled = $orders !== [] && count(array_filter($orders, static fn(array $o): bool => $o['cancelled'])) === count($orders);
