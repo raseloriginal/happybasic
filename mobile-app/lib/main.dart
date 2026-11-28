@@ -83,7 +83,9 @@ class _RoleGateState extends State<RoleGate> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
-    if (!auth.ready) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (!auth.ready) {
+      return Scaffold(backgroundColor: const Color(0xFF1057DF), body: Center(child: Image.asset('assets/images/logo.png', width: 130)));
+    }
     if (auth.updateMessage != null) return UpdateRequiredPage(message: auth.updateMessage!);
     if (!auth.signedIn) return const LoginPage();
     return switch (auth.role) {

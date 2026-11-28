@@ -108,7 +108,7 @@ class _LoginPageState extends State<LoginPage> {
                         width: 72, height: 72,
                         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 20, offset: Offset(0, 6))]),
                         clipBehavior: Clip.antiAlias,
-                        child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox()),
+                        child: Image.asset('assets/images/logo.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox()),
                       ),
                     ),
                   ),

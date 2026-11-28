@@ -78,6 +78,7 @@ class Tracker extends ChangeNotifier {
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'হ্যাপি বাংলাদেশ',
         notificationText: 'লোকেশন ট্র্যাকিং চালু আছে',
+        notificationIcon: AndroidResource(name: 'ic_stat_hb', defType: 'drawable'),
         enableWakeLock: true,
         setOngoing: true,
       ),

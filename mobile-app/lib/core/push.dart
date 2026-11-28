@@ -57,7 +57,7 @@ class PushService {
   static Future<void> initLocal() async {
     if (kIsWeb) return; // browser preview: no local notifications
     await localNotifications.initialize(
-      settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+      settings: const InitializationSettings(android: AndroidInitializationSettings('ic_stat_hb')),
     );
     final android = localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await android?.createNotificationChannel(hbChannel);
