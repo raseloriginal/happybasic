@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/format.dart';
+import 'motion.dart';
 import 'pwa_kit.dart';
 
 /// "Happy অ্যাপ ডিজাইন" tokens (the design canvas shared by the retailer, SR and delivery-man apps).
@@ -78,9 +79,14 @@ class SkyBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    final c = child;
+    // Blocks rise in one after another (design hpIn).
+    final body = c is Column
+        ? Column(mainAxisAlignment: c.mainAxisAlignment, mainAxisSize: c.mainAxisSize, crossAxisAlignment: c.crossAxisAlignment, children: Appear.stagger(c.children))
+        : Appear(child: c);
     return Stack(clipBehavior: Clip.none, children: [
       Positioned(left: -side, right: -side, top: -(top + 14), height: height + top, child: const CustomPaint(painter: SkyPainter())),
-      child,
+      body,
     ]);
   }
 }
@@ -217,12 +223,13 @@ class HCard extends StatelessWidget {
         onTap!();
       }, child: inner));
     }
-    return Container(
+    final card = Container(
       margin: margin,
       decoration: BoxDecoration(color: color, borderRadius: r, boxShadow: lift ? HC.lift : null, border: lift || !border ? null : Border.all(color: HC.line)),
       clipBehavior: onTap != null ? Clip.antiAlias : Clip.none,
       child: inner,
     );
+    return onTap == null ? card : Pressable(scale: .98, child: card);
   }
 }
 
@@ -252,7 +259,7 @@ class HBtn extends StatelessWidget {
     final enabled = onTap != null;
     return Semantics(
       button: true, enabled: enabled,
-      child: Opacity(
+      child: Pressable(enabled: enabled, child: Opacity(
         opacity: enabled ? 1 : .45,
         child: Material(
           color: bg,
@@ -277,7 +284,7 @@ class HBtn extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -381,7 +388,7 @@ class HTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    return Container(
+    return Appear(offset: 70, duration: const Duration(milliseconds: 500), child: Container(
       decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: HC.line))),
       padding: EdgeInsets.fromLTRB(8, 0, 8, bottom),
       child: Row(children: [
@@ -422,7 +429,7 @@ class HTabBar extends StatelessWidget {
             ),
           ),
       ]),
-    );
+    ));
   }
 }
 
@@ -680,22 +687,19 @@ class SkyDateBar extends StatelessWidget {
   }
 }
 
-/// Bottom sheet in the design (radius 30, handle, safe area, keyboard aware).
+/// Bottom sheet in the design (radius 30, handle, safe area, keyboard aware). It follows the finger:
+/// pull down to close, push up to open it to full height, and it slides in and out softly.
 Future<T?> showHSheet<T>(BuildContext context, {required WidgetBuilder builder, bool scroll = true}) => showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      enableDrag: false,
       backgroundColor: Colors.white,
       barrierColor: const Color(0x730A1640),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       clipBehavior: Clip.antiAlias,
-      builder: (c) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(margin: const EdgeInsets.only(top: 10, bottom: 6), width: 44, height: 5, decoration: BoxDecoration(color: HC.line2, borderRadius: BorderRadius.circular(3))),
-          Flexible(child: scroll ? SingleChildScrollView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 24), child: builder(c)) : builder(c)),
-        ]),
-      ),
+      sheetAnimationStyle: const AnimationStyle(duration: Duration(milliseconds: 420), reverseDuration: Duration(milliseconds: 260), curve: kEase, reverseCurve: Curves.easeInCubic),
+      builder: (c) => SheetFrame(scroll: scroll, builder: (c, _) => builder(c)),
     );
 
 /// Round "−" / "+" stepper on a soft panel (SR3b / DMD).
@@ -767,7 +771,7 @@ class HScroll extends StatelessWidget {
       controller: controller,
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       padding: EdgeInsets.fromLTRB(18, top + 14, 18, bottom),
-      children: children,
+      children: Appear.stagger(children),
     );
     return onRefresh == null ? list : RefreshIndicator(color: HC.blue, edgeOffset: top, onRefresh: onRefresh!, child: list);
   }

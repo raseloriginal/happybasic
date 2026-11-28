@@ -2,13 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/api.dart';
 import '../core/format.dart';
 import '../core/offline.dart';
+import '../core/session.dart';
 import '../ui/common.dart';
 import '../ui/hkit.dart';
+import '../ui/motion.dart';
 import '../ui/pwa_kit.dart';
 import 'damage_page.dart';
 import 'delivery_page.dart' show statusBn;
@@ -112,13 +115,13 @@ class _StopPageState extends State<StopPage> {
     });
   }
 
-  Future<String?> _reasonSheet() {
+  Future<String?> _reasonSheet({String title = 'পুরো অর্ডার বাতিল করবেন?', String hint = 'কারণ বাছুন — দোকান ও SR দেখতে পাবে।', String yes = 'হ্যাঁ, বাতিল', String no = 'না', bool danger = true}) {
     var chosen = widget.reasons.isEmpty ? 'অন্যান্য' : widget.reasons.first;
     final note = TextEditingController();
     return showHSheet<String>(context, builder: (c) => StatefulBuilder(
       builder: (c, set) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-        Text('পুরো অর্ডার বাতিল করবেন?', style: hs(18, w: w8)),
-        Text('কারণ বাছুন — দোকান ও SR দেখতে পাবে।', style: hs(12.5, color: HC.muted)),
+        Text(title, style: hs(18, w: w8)),
+        Text(hint, style: hs(12.5, color: HC.muted)),
         gap12,
         Wrap(spacing: 8, runSpacing: 8, children: [
           for (final r in widget.reasons)
@@ -127,7 +130,7 @@ class _StopPageState extends State<StopPage> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(color: chosen == r ? HC.ink : Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: chosen == r ? HC.ink : HC.line)),
-                child: Text(r, style: hs(13.5, w: w6, color: chosen == r ? Colors.white : HC.ink)),
+                child: Text(cancelReasonBn(r), style: hs(13.5, w: w6, color: chosen == r ? Colors.white : HC.ink)),
               ),
             ),
         ]),
@@ -135,15 +138,23 @@ class _StopPageState extends State<StopPage> {
         TextField(controller: note, style: hs(14), decoration: InputDecoration(hintText: 'নোট (ঐচ্ছিক)', hintStyle: hs(14, color: HC.faint), filled: true, fillColor: HC.bg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none))),
         gap16,
         Row(children: [
-          Expanded(child: HBtn('না', kind: HBtnKind.line, onTap: () => Navigator.pop(c))),
+          Expanded(child: HBtn(no, kind: HBtnKind.line, onTap: () => Navigator.pop(c, danger ? null : ''))),
           const SizedBox(width: 10),
-          Expanded(child: HBtn('হ্যাঁ, বাতিল', kind: HBtnKind.danger, onTap: () => Navigator.pop(c, note.text.trim().isEmpty ? chosen : '$chosen (${note.text.trim()})'))),
+          Expanded(child: HBtn(yes, kind: danger ? HBtnKind.danger : HBtnKind.dark, onTap: () => Navigator.pop(c, note.text.trim().isEmpty ? chosen : '$chosen (${note.text.trim()})'))),
         ]),
       ]),
     ));
   }
 
   Future<void> _pay() async {
+    // Took less than ordered (not cancelled): ask why, so the SR and the report know.
+    var shortReason = '';
+    final short = _orders.any((o) => !o.cancelled && o.items.any((i) => i.qty < i.ordered));
+    if (short && _can) {
+      final r = await _reasonSheet(title: 'কম নিল কেন?', hint: 'কারণ বাছুন — SR ও রিপোর্টে দেখা যাবে।', yes: 'ঠিক আছে', no: 'এড়িয়ে যান', danger: false);
+      if (r == null || !mounted) return;
+      shortReason = r;
+    }
     final paid = await showHSheet<double>(context, builder: (_) => _PaySheet(name: '${_s['retailer_name']}', bill: _shouldPay, oldDue: _oldDue, initial: _pending ? _shouldPay : num0(_s['paid_amount']) + num0(_s['old_due_collected'])));
     if (paid == null || !mounted) return;
     final body = {
@@ -162,6 +173,7 @@ class _StopPageState extends State<StopPage> {
       ],
       'paid': paid,
       'cancel_reason': _orders.any((o) => o.cancelled) ? _cancelReason : '',
+      'short_reason': shortReason,
     };
     final r = await busy(context, () => OfflineQueue.write('POST', '/dsr/stops/${_s['id']}', body: body, label: '${_s['retailer_name']}-এর ডেলিভারি'));
     if (r == null || !mounted) return;
@@ -204,6 +216,9 @@ class _StopPageState extends State<StopPage> {
                   kicker: _pending ? 'দোকানে ডেলিভারি' : 'সংরক্ষিত · ${statusBn(status)}',
                   title: '${_s['retailer_name']}',
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    GlassBtn(icon: Ic.doc, label: 'ডেলিভারি স্লিপ', onTap: () => showHSheet<void>(context, builder: (_) => _SlipSheet(
+                          stop: _s, orders: _orders, paid: _pending ? 0 : num0(_s['paid_amount']) + num0(_s['old_due_collected']), bill: _shouldPay, over: _over))),
+                    const SizedBox(width: 8),
                     if (phone.isNotEmpty) GlassBtn(icon: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>', label: 'কল করুন', onTap: () => launchUrl(Uri.parse('tel:$phone'))),
                     if (num0(_s['lat']) != 0) ...[
                       const SizedBox(width: 8),
@@ -298,55 +313,85 @@ class _StopPageState extends State<StopPage> {
     );
   }
 
+  void _restore(_Order o) => setState(() {
+        HapticFeedback.selectionClick();
+        o.cancelled = false;
+        for (final i in o.items) {
+          i.qty = i.full;
+        }
+      });
+
+  /// One company's order (DMD): name, its amount, a round ✕ to cancel it (↺ brings it back), then its lines.
   Widget _orderCard(_Order o) {
     final cancelled = o.cancelled;
-    return HCard(
-      radius: 22, padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      color: cancelled ? HC.chip : Colors.white,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          LetterAvatar(o.company, size: 40, radius: 12, bg: cancelled ? Colors.white : HC.soft, fg: cancelled ? HC.muted : HC.blue, fontSize: 16),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(o.company, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14.5, w: w7)),
-            Text('${bn(o.code)} · SR ${o.sr}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.muted, num: true)),
-          ])),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(tk(o.gross), style: hs(15, w: w8, num: true)),
-            if (cancelled) const HChip('বাতিল', bg: HC.redSoft, fg: HC.red, size: 10.5),
-          ]),
-        ]),
-        if (!cancelled)
-          for (final i in o.items)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: HC.line))),
-              child: Row(children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(i.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(13.5, w: w6)),
-                  Text('অর্ডার ${bn(i.ordered)} · ভ্যানে ${bn(i.stock)} · ${tk(i.srRate)}', style: hs(11.5, color: i.stock < i.ordered ? HC.red : HC.muted, num: true)),
-                ])),
-                if (_can) _qty(i) else Text('${bn(i.qty)} পিস', style: hs(13.5, w: w7, num: true)),
-              ]),
-            )
-        else if (_cancelReason.isNotEmpty)
-          Padding(padding: const EdgeInsets.only(top: 8), child: Text(_cancelReason, style: hs(12.5, w: w6, color: HC.red))),
-        if (_can)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: cancelled
-                  ? () => setState(() {
-                        o.cancelled = false;
-                        for (final i in o.items) {
-                          i.qty = i.full;
-                        }
-                      })
-                  : () => _cancelOrder(o),
-              child: Text(cancelled ? 'বাতিল ফিরিয়ে আনুন' : 'এই অর্ডার বাতিল', style: hs(13, w: w6, color: cancelled ? HC.blue : HC.red)),
-            ),
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 260),
+      opacity: cancelled ? .55 : 1,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+            boxShadow: const [BoxShadow(color: Color(0x0F0A1640), blurRadius: 18, offset: Offset(0, 6))]),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 8),
+            child: Row(children: [
+              Expanded(child: Text(o.company, maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(15, w: w7))),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 64),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(tk(o.gross), key: ValueKey(o.gross), textAlign: TextAlign.right, style: hs(15, w: w7, num: true)),
+                ),
+              ),
+              if (_can) ...[
+                const SizedBox(width: 8),
+                Semantics(
+                  button: true, label: cancelled ? 'আবার নিন' : 'এই কোম্পানি বাতিল',
+                  child: Pressable(
+                    scale: .9,
+                    child: GestureDetector(
+                      onTap: cancelled ? () => _restore(o) : () => _cancelOrder(o),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 30, height: 30, alignment: Alignment.center,
+                        decoration: BoxDecoration(color: cancelled ? HC.soft : HC.redSoft, shape: BoxShape.circle),
+                        child: Text(cancelled ? '↺' : '✕', style: hs(13, w: w8, color: cancelled ? HC.blue : HC.red, h: 1)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ]),
           ),
-      ]),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300), curve: kEase, alignment: Alignment.topCenter,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (!cancelled)
+                for (final i in o.items)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFEEF0F5)))),
+                    child: Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(i.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: hs(13.5, w: w6)),
+                        Text('অর্ডার ${bn(i.ordered)} · ${tk(i.srRate)}${i.stock < i.ordered ? ' · ভ্যানে ${bn(i.stock)}' : ''}',
+                            style: hs(11.5, color: i.stock < i.ordered ? HC.red : HC.muted, num: true)),
+                        if (i.qty < i.ordered)
+                          Text(i.qty == 0 ? 'কিছুই নেয়নি' : '${bn(i.ordered - i.qty)} পিস কম', style: hs(11.5, w: w7, color: HC.red)),
+                      ])),
+                      if (_can) _qty(i) else Text('${bn(i.qty)} পিস', style: hs(13.5, w: w7, num: true)),
+                    ]),
+                  )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFEEF0F5)))),
+                  child: Text(_cancelReason.isEmpty ? 'বাতিল' : 'বাতিল · $_cancelReason', style: hs(12.5, w: w6, color: HC.red)),
+                ),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -373,15 +418,7 @@ class _StopPageState extends State<StopPage> {
       b('−', false),
       GestureDetector(
         onTap: () async {
-          final c = TextEditingController(text: '${i.qty}');
-          final v = await showDialog<int>(context: context, builder: (ctx) => AlertDialog(
-                title: Text(i.name, style: hs(15, w: w7)),
-                content: TextField(controller: c, autofocus: true, keyboardType: TextInputType.number, textAlign: TextAlign.center, inputFormatters: [FilteringTextInputFormatter.digitsOnly], style: hs(22, w: w8, num: true)),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('বাতিল')),
-                  FilledButton(onPressed: () => Navigator.pop(ctx, int.tryParse(c.text) ?? 0), child: const Text('ঠিক আছে')),
-                ],
-              ));
+          final v = await askNumber(context, i.name, i.qty);
           if (v != null && mounted) setState(() => i.set(v));
         },
         child: SizedBox(width: 40, child: Text(bn(i.qty), textAlign: TextAlign.center, style: hs(16, w: w8, num: true))),
@@ -636,6 +673,115 @@ class _InvoiceSheet extends StatelessWidget {
         Expanded(child: Text('নগদ দিয়েছে', style: hs(14, w: w6))),
         Text(tk(paid), style: hs(20, w: w8, num: true)),
       ]),
+      if ((stop['timeline'] as List?)?.isNotEmpty ?? false) ...[
+        const SizedBox(height: 18),
+        Row(children: [
+          Expanded(child: Text('হিস্ট্রি', style: hs(16, w: w7))),
+          const HChip('অটো', bg: HC.soft, fg: HC.blue, size: 11),
+        ]),
+        const SizedBox(height: 8),
+        for (final (i, e) in ((stop['timeline'] as List).map((x) => Map<String, dynamic>.from(x as Map))).indexed)
+          IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              SizedBox(
+                width: 22,
+                child: Column(children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 4), width: 12, height: 12,
+                    decoration: BoxDecoration(color: i == 0 ? HC.blue : Colors.white, shape: BoxShape.circle, border: Border.all(color: HC.blue, width: 2)),
+                  ),
+                  if (i < (stop['timeline'] as List).length - 1) Expanded(child: Container(width: 2, color: HC.line)),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${e['title']}', style: hs(14, w: w7)),
+                  if ('${e['sub'] ?? ''}'.isNotEmpty) Text('${e['sub']}', style: hs(12, color: HC.muted)),
+                ]),
+              )),
+              Text('${e['time'] ?? ''}', style: hs(12, color: HC.muted, num: true)),
+            ]),
+          ),
+      ],
+    ]);
+  }
+}
+
+/// DMDslip · ডেলিভারি স্লিপ: the paper slip the shop gets (what was ordered, what it took, bill, paid, due).
+class _SlipSheet extends StatelessWidget {
+  const _SlipSheet({required this.stop, required this.orders, required this.paid, required this.bill, required this.over});
+  final Map<String, dynamic> stop;
+  final List<_Order> orders;
+  final double paid, bill, over;
+
+  @override
+  Widget build(BuildContext context) {
+    final me = context.read<AuthState>();
+    final items = [for (final o in orders) for (final i in o.items) (i: i, cancelled: o.cancelled)];
+    final now = DateTime.now();
+    final d2 = (int n) => n.toString().padLeft(2, '0');
+    final slipNo = 'HB-${'${stop['id']}'.padLeft(4, '0')}-${d2(now.year % 100)}${d2(now.month)}${d2(now.day)}';
+    final ordered = items.fold<int>(0, (a, x) => a + x.i.ordered);
+    final taken = items.fold<int>(0, (a, x) => a + (x.cancelled ? 0 : x.i.qty));
+    Widget kv(String k, String v, {bool bold = false}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(children: [
+            Expanded(child: Text(k, style: hs(13, w: bold ? w8 : w5, color: bold ? HC.ink : HC.ink2))),
+            Text(v, style: hs(bold ? 15 : 13, w: bold ? w8 : w6, num: true)),
+          ]),
+        );
+    Widget cell(String t, {int flex = 2, bool head = false, TextAlign align = TextAlign.right, bool strong = false}) => Expanded(
+        flex: flex,
+        child: Text(t, textAlign: align, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: hs(head ? 11 : 12.5, w: head ? w7 : (strong ? w8 : w5), color: head ? HC.muted : HC.ink, num: true)
+                .copyWith(decoration: strong ? TextDecoration.underline : null)));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Column(children: [
+        Container(
+          width: 34, height: 34, alignment: Alignment.center,
+          decoration: BoxDecoration(color: HC.sky, borderRadius: BorderRadius.circular(10)),
+          child: Image.asset('assets/images/mark_white.png', width: 20, errorBuilder: (_, __, ___) => const SizedBox()),
+        ),
+        const SizedBox(height: 4),
+        Text('HAPPY BANGLADESH', style: hs(14, w: w8).copyWith(letterSpacing: 1)),
+        Text('${me.profile['partner'] ?? ''}', style: hs(12, color: HC.muted)),
+        const SizedBox(height: 6),
+        Text('ডেলিভারি স্লিপ', style: hs(16, w: w8)),
+      ]),
+      const SizedBox(height: 10),
+      const HDashed(),
+      const SizedBox(height: 8),
+      kv('দোকান', '${stop['retailer_name']}'),
+      kv('মেমো', orders.map((o) => o.code).join(', ')),
+      kv('তারিখ', bn('${d2(now.day)}/${d2(now.month)}/${now.year} ${d2(now.hour)}:${d2(now.minute)}')),
+      kv('DM', me.name),
+      const SizedBox(height: 8),
+      const HDashed(),
+      const SizedBox(height: 6),
+      Row(children: [cell('পণ্য', flex: 5, head: true, align: TextAlign.left), cell('অর্ডার', head: true), cell('দিল', head: true), cell('টাকা', flex: 3, head: true)]),
+      for (final x in items)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            cell(x.i.name, flex: 5, align: TextAlign.left),
+            cell(bn(x.i.ordered)),
+            cell(bn(x.cancelled ? 0 : x.i.qty), strong: (x.cancelled ? 0 : x.i.qty) < x.i.ordered),
+            cell(tk(x.cancelled ? 0 : x.i.qty * x.i.srRate), flex: 3),
+          ]),
+        ),
+      const SizedBox(height: 6),
+      const HDashed(),
+      const SizedBox(height: 6),
+      kv('মোট পিস', '${bn(taken)} / ${bn(ordered)}'),
+      if (over.abs() >= .5) kv('ডেলিভারি ওভার', sMoney(over)),
+      kv('মোট বিল', tk(bill), bold: true),
+      kv('জমা', tk(paid)),
+      kv('বাকি', tk((bill - paid).clamp(0, double.infinity))),
+      const SizedBox(height: 10),
+      Text(slipNo, textAlign: TextAlign.center, style: hs(12, w: w7, color: HC.muted, num: true)),
+      Text('ধন্যবাদ · আবার দেখা হবে', textAlign: TextAlign.center, style: hs(12, color: HC.muted)),
     ]);
   }
 }

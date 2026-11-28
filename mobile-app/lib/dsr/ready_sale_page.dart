@@ -6,6 +6,7 @@ import '../core/offline.dart';
 import '../core/printer.dart';
 import '../core/tracker.dart';
 import '../ui/common.dart';
+import '../ui/hkit.dart';
 import '../ui/dkit.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
@@ -57,10 +58,7 @@ class _ReadySalePageState extends State<ReadySalePage> {
   }
 
   Future<void> _pickShop() async {
-    final picked = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context, isScrollControlled: true,
-      builder: (c) => _ShopPicker(directory: _directory),
-    );
+    final picked = await showHSheet<Map<String, dynamic>>(context, scroll: false, builder: (c) => _ShopPicker(directory: _directory));
     if (picked != null) setState(() => _shop = picked);
   }
 

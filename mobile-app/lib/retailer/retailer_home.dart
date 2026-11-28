@@ -11,6 +11,7 @@ import '../core/realtime.dart';
 import '../core/session.dart';
 import '../ui/common.dart';
 import '../ui/hkit.dart';
+import '../ui/motion.dart';
 import '../ui/printer_page.dart';
 import '../ui/pwa_kit.dart';
 import '../ui/update.dart';
@@ -88,8 +89,8 @@ class _RetailerHomeState extends State<RetailerHome> {
             child: ColoredBox(
               color: HC.bg,
               child: IndexedStack(index: _tab, children: [
-                _TodayPage(unread: _unread, onBell: _openNotifications),
-                const _HistoryPage(),
+                TabFade(active: _tab == 0, child: _TodayPage(unread: _unread, onBell: _openNotifications)),
+                TabFade(active: _tab == 1, child: const _HistoryPage()),
               ]),
             ),
           ),
@@ -330,8 +331,18 @@ class _GoodsCard extends StatelessWidget {
 }
 
 /// R3 · হিস্ট্রি: 7-day summary, date tiles with bars.
-class _HistoryPage extends StatelessWidget {
+class _HistoryPage extends StatefulWidget {
   const _HistoryPage();
+  @override
+  State<_HistoryPage> createState() => _HistoryPageState();
+}
+
+/// R3 · হিস্ট্রি: ৭ দিন / ৩০ দিন / এই মাস (or a past month), bought + profit, a bar per day, then the days.
+class _HistoryPageState extends State<_HistoryPage> {
+  static const _ranges = ['7', '30', 'month'];
+  int _tab = 0;
+  String? _month;
+  List<Map<String, dynamic>> _months = const [];
 
   Future<void> _openDay(BuildContext context, Map<String, dynamic> r) async {
     final res = await busy(context, () => ApiClient.get('/retailer/day', query: {'date': r['date']}));
@@ -342,72 +353,167 @@ class _HistoryPage extends StatelessWidget {
         date: '${r['date']}', orders: orders, selectedId: orders.isEmpty ? 0 : int0(orders.first['id']))));
   }
 
+  Future<void> _pickMonth() async {
+    if (_months.isEmpty) return;
+    final v = await showHSheet<String>(context, builder: (c) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('মাস বাছুন', style: hs(18, w: w7)),
+          gap12,
+          for (final m in _months)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: HCard(
+                onTap: () => Navigator.pop(c, '${m['value']}'),
+                color: '${m['value']}' == (_month ?? '') ? HC.soft : Colors.white,
+                child: Row(children: [
+                  Expanded(child: Text('${m['label']}', style: hs(15, w: w7))),
+                  if ('${m['value']}' == (_month ?? '')) const Svg('<path d="M5 12l5 5L20 7"/>', size: 18, color: HC.blue, stroke: 2.4),
+                ]),
+              ),
+            ),
+        ]));
+    if (v != null && mounted) {
+      setState(() {
+        _tab = 2;
+        _month = v;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final range = _ranges[_tab];
+    final month = _tab == 2 ? _month : null;
     return AsyncBody(
+      key: ValueKey('$range$month'),
       sky: true,
-      load: () => loadCached('ret_history', () => ApiClient.get('/retailer/history')),
+      load: () => loadCached('ret_history_$range${month ?? ''}', () => ApiClient.get('/retailer/history', query: {'range': range, if (month != null) 'month': month})),
       builder: (context, d, reload) {
         final rows = (d['rows'] as List).map(_m).toList();
-        final week = d['week'] is Map ? _m(d['week']) : null;
-        final max = rows.fold<double>(1, (a, r) => num0(r['total']) > a ? num0(r['total']) : a);
+        _months = ((d['months'] as List?) ?? const []).map(_m).toList();
+        final monthLabel = _months.firstWhere((m) => m['value'] == d['month'], orElse: () => _months.isEmpty ? {'label': monthYearBn()} : _months.first)['label'];
+        final bars = rows.take(7).toList().reversed.toList();
+        final max = bars.fold<double>(1, (a, r) => num0(r['total']) > a ? num0(r['total']) : a);
+        final profit = d['profit'];
         return SkyBox(
           height: 250,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('হিস্ট্রি', style: hs(20, w: w7, color: Colors.white)),
+            Row(children: [
+              Expanded(child: Text('হিস্ট্রি', style: hs(21, w: w7, color: Colors.white))),
+              Pressable(
+                child: GestureDetector(
+                  onTap: _pickMonth,
+                  child: Container(
+                    height: 40, padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(color: const Color(0x29FFFFFF), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0x42FFFFFF))),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>', size: 16, color: Colors.white, stroke: 1.8),
+                      const SizedBox(width: 8),
+                      Text('$monthLabel', style: hs(14, w: w7, color: Colors.white)),
+                    ]),
+                  ),
+                ),
+              ),
+            ]),
             gap12,
-            if (week != null)
-              HCard(
-                lift: true,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                child: Row(children: [
+            HSeg(items: const ['৭ দিন', '৩০ দিন', 'এই মাস'], index: _tab, onTap: (i) => setState(() {
+                  _tab = i;
+                  if (i == 2) _month = null;
+                })),
+            gap12,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22),
+                  boxShadow: const [BoxShadow(color: Color(0x240A1640), blurRadius: 40, offset: Offset(0, 18))]),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('শেষ ৭ দিনে কেনা', style: hs(12, color: HC.muted)),
-                    FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(tk(week['bought']), style: hs(28, w: w7, num: true, h: 1.25))),
+                    Text('মোট কেনা', style: hs(12, color: HC.muted)),
+                    FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(tk(d['bought']), style: hs(28, w: w7, num: true, h: 1.1))),
                   ])),
-                  if (week['profit'] != null)
+                  if (profit != null)
                     Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text('৭ দিনে লাভ', style: hs(12, color: HC.muted)),
-                      Text(sMoney(week['profit']), style: hs(18, w: w7, color: HC.blue, num: true)),
+                      Text('আপনার লাভ', style: hs(12, color: HC.muted)),
+                      Text(sMoney(profit), style: hs(20, w: w7, color: const Color(0xFF12805C), num: true)),
                     ]),
                 ]),
-              ),
-            gap12,
+                if (bars.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    for (var i = 0; i < bars.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 10),
+                      Expanded(child: Column(children: [
+                        SizedBox(
+                          height: 56,
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0, end: (num0(bars[i]['total']) / max).clamp(.06, 1).toDouble()),
+                              duration: Duration(milliseconds: 600 + i * 60), curve: kEase,
+                              builder: (_, v, __) => FractionallySizedBox(
+                                heightFactor: v,
+                                child: Container(decoration: BoxDecoration(color: i == bars.length - 1 ? HC.blue : HC.onSky, borderRadius: BorderRadius.circular(6))),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('${bars[i]['day']}', style: hs(11, color: HC.muted)),
+                      ])),
+                    ],
+                  ]),
+                ],
+              ]),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                Expanded(child: Text('ডেলিভারি', style: hs(17, w: w7))),
+                Text('${bn(int0(d['days']))} দিন · ${bn(int0(d['deliveries']))}টি ডেলিভারি', style: hs(13, color: HC.muted)),
+              ]),
+            ),
+            gap8,
             if (rows.isEmpty)
-              const HEmpty('এখনো কোনো হিস্ট্রি নেই', body: 'অর্ডার ও ডেলিভারি হলে দিন অনুযায়ী এখানে জমা হবে।')
+              const HEmpty('এই সময়ে কোনো কেনা নেই', body: 'অর্ডার ও ডেলিভারি হলে দিন অনুযায়ী এখানে জমা হবে।')
             else
-              HList(children: [
-                for (final r in rows)
-                  InkWell(
-                    onTap: () => _openDay(context, r),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Row(children: [
-                        Container(
-                          width: 48, height: 50,
-                          decoration: BoxDecoration(color: r['today'] == true ? HC.blue : HC.soft, borderRadius: BorderRadius.circular(14)),
-                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            Text('${r['day']}', style: hs(17, w: w7, color: r['today'] == true ? Colors.white : HC.blue, h: 1.1)),
-                            Text('${r['month']}', style: hs(10, color: r['today'] == true ? Colors.white : HC.blue, h: 1.1)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22),
+                    boxShadow: const [BoxShadow(color: Color(0x140A1640), blurRadius: 30, offset: Offset(0, 10))]),
+                child: Column(children: [
+                  for (var i = 0; i < rows.length; i++)
+                    Pressable(
+                      scale: .98,
+                      child: InkWell(
+                        onTap: () => _openDay(context, rows[i]),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(border: i == 0 ? null : const Border(top: BorderSide(color: Color(0xFFEEF0F5)))),
+                          child: Row(children: [
+                            Container(
+                              width: 46, height: 46,
+                              decoration: BoxDecoration(color: i == 0 ? HC.sky : HC.soft, borderRadius: BorderRadius.circular(14)),
+                              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Text('${rows[i]['day']}', style: hs(16, w: w7, color: i == 0 ? Colors.white : HC.blue, h: 1.05)),
+                                Text('${rows[i]['month']}', style: hs(10, color: i == 0 ? Colors.white : HC.blue, h: 1.05)),
+                              ]),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text('${rows[i]['title']}', style: hs(15, w: w7)),
+                              Text('${rows[i]['companies']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.muted)),
+                            ])),
+                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                              Text(tk(rows[i]['total']), style: hs(15, w: w7, num: true)),
+                              if (rows[i]['profit'] != null)
+                                Text('লাভ ${sMoney(rows[i]['profit'])}', style: hs(12, w: w7, color: const Color(0xFF12805C), num: true)),
+                            ]),
                           ]),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('${r['sub']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(12, color: HC.muted)),
-                          const SizedBox(height: 5),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: LinearProgressIndicator(value: (num0(r['total']) / max).clamp(.04, 1), minHeight: 5, backgroundColor: HC.bg, color: HC.blue),
-                          ),
-                        ])),
-                        const SizedBox(width: 12),
-                        Text(tk(r['total']), style: hs(15, w: w7, num: true)),
-                        const SizedBox(width: 4),
-                        const Svg('<path d="M9 5l7 7-7 7"/>', size: 16, color: HC.muted, stroke: 1.8),
-                      ]),
+                      ),
                     ),
-                  ),
-              ]),
+                ]),
+              ),
           ]),
         );
       },

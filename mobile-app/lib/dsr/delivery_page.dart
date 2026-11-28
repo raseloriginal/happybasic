@@ -327,7 +327,8 @@ class _DeliveryPageState extends State<DeliveryPage> {
     final st = '${s['status']}';
     final dot = stopDot(s, number);
     final pending = st == 'Pending';
-    final note = '${s['cancel_reason'] ?? ''}';
+    final rawNote = '${s['cancel_reason'] ?? ''}'.isNotEmpty ? '${s['cancel_reason']}' : '${s['short_reason'] ?? ''}';
+    final note = cancelReasonBn(rawNote.replaceFirst(RegExp(r'^DSR:\s*'), ''));
     final dist = _dist(s);
     final sub = !pending && note.isNotEmpty
         ? note

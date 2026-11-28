@@ -13,6 +13,7 @@ import '../ui/account.dart';
 import '../ui/common.dart';
 import '../ui/dkit.dart';
 import '../ui/hkit.dart';
+import '../ui/motion.dart';
 import '../ui/pwa_kit.dart';
 import '../ui/tracker_banner.dart';
 import '../ui/update.dart';
@@ -78,10 +79,10 @@ class _DsrHomeState extends State<DsrHome> {
               color: HC.bg,
               child: Stack(children: [
                 IndexedStack(index: _tab, children: [
-                  _TodayPage(onShops: () => _go(1)),
-                  lazy(1, () => DeliveryPage(active: _tab == 1)),
-                  lazy(2, () => const VanStockPage()),
-                  lazy(3, () => const _MePage()),
+                  TabFade(active: _tab == 0, child: _TodayPage(onShops: () => _go(1))),
+                  TabFade(active: _tab == 1, child: lazy(1, () => DeliveryPage(active: _tab == 1))),
+                  TabFade(active: _tab == 2, child: lazy(2, () => const VanStockPage())),
+                  TabFade(active: _tab == 3, child: lazy(3, () => const _MePage())),
                 ]),
                 Positioned(top: top + 6, left: 0, right: 0, child: const Center(child: SyncChip())),
               ]),

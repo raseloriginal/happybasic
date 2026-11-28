@@ -98,6 +98,7 @@ class _SrHistoryPageState extends State<SrHistoryPage> {
         final date = d['date'].toString();
         final orders = ((d['orders'] as List?) ?? const []).map(_m).toList();
         final active = orders.where((o) => o['status_key'] != 'cancelled').toList();
+        final noOrder = ((d['no_order'] as List?) ?? const []).map(_m).toList();
         final total = active.fold<double>(0, (a, o) => a + num0(o['sr_total']));
         final shops = orders.map((o) => '${o['retailer_id']}').toSet().length;
         final wd = DateTime.tryParse(date);
@@ -135,11 +136,25 @@ class _SrHistoryPageState extends State<SrHistoryPage> {
                   ]),
                 ),
                 gap16,
-                if (orders.isEmpty)
+                if (orders.isEmpty && noOrder.isEmpty)
                   const HEmpty('এই দিনে কোনো অর্ডার নেই', body: 'আগের দিন দেখতে ‹ চাপুন।')
                 else
                   HList(children: [
                     for (final o in orders) _row(context, o, date),
+                    // Shops the SR stood at (GPS) without an order.
+                    for (final v in noOrder)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(children: [
+                          LetterAvatar('${v['name']}', size: 42, radius: 13, bg: HC.chip, fg: HC.muted, fontSize: 16),
+                          const SizedBox(width: 12),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('${v['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: hs(14.5, w: w6, color: HC.ink2)),
+                            Text('ভিজিট · অর্ডার দেয়নি', style: hs(12, color: HC.muted)),
+                          ])),
+                          if ('${v['time'] ?? ''}'.isNotEmpty) Text('${v['time']}', style: hs(12, color: HC.muted, num: true)),
+                        ]),
+                      ),
                   ]),
               ]),
             ),

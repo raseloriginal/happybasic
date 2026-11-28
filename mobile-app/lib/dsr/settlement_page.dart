@@ -258,14 +258,14 @@ class _SettlementPageState extends State<SettlementPage> {
       );
 
   void _showDues(List<Map<String, dynamic>> dues) {
-    showModalBottomSheet<void>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent, useSafeArea: true,
+    showHSheet<void>(
+      context, scroll: false,
       builder: (c) => Align(
         alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: kFrameW, maxHeight: MediaQuery.of(c).size.height * 0.8),
           child: Container(
-            decoration: const BoxDecoration(color: DC.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            color: DC.surface,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Padding(padding: const EdgeInsets.fromLTRB(16, 14, 14, 12), child: Row(children: [const Expanded(child: DSecTitle('দোকান বাকির তালিকা')), DIconBtn(icon: '<path d="M18 6 6 18M6 6l12 12"/>', onTap: () => Navigator.pop(c))])),
               const Divider(height: 1, color: DC.border),
