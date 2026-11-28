@@ -13,6 +13,7 @@ import 'dsr/dsr_home.dart';
 import 'retailer/retailer_home.dart';
 import 'sr/sr_home.dart';
 import 'ui/common.dart';
+import 'ui/loader.dart';
 import 'ui/update.dart';
 
 Future<void> main() async {
@@ -83,9 +84,11 @@ class _RoleGateState extends State<RoleGate> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
-    if (!auth.ready) {
-      return Scaffold(backgroundColor: const Color(0xFF1057DF), body: Center(child: Image.asset('assets/images/logo.png', width: 130)));
-    }
+    return StartGate(ready: auth.ready, child: _screen(auth));
+  }
+
+  Widget _screen(AuthState auth) {
+    if (!auth.ready) return const SizedBox.shrink();
     if (auth.updateMessage != null) return UpdateRequiredPage(message: auth.updateMessage!);
     if (!auth.signedIn) return const LoginPage();
     return switch (auth.role) {

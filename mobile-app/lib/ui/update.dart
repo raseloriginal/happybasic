@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/api.dart';
 import 'common.dart';
+import 'loader.dart';
 
 /// Shown when the server refuses this build (APP_MIN_VERSION_CODE).
 class UpdateRequiredPage extends StatelessWidget {
@@ -42,7 +43,9 @@ class UpdateChecker {
     _done = true;
     try {
       final r = await ApiClient.get('/app/version', query: {'code': ApiClient.buildNumber});
-      if (r['update'] != true || !context.mounted) return;
+      if (r['update'] != true) return;
+      await AppStart.opened;
+      if (!context.mounted) return;
       final force = r['force'] == true;
       await showDialog<void>(
         context: context,

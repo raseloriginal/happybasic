@@ -19,6 +19,7 @@ import '../ui/me_layer.dart';
 import '../ui/pwa_kit.dart';
 import 'ready_sale_page.dart';
 import 'stop_page.dart';
+import '../ui/loader.dart';
 
 Map<String, dynamic> _m(Object? v) => Map<String, dynamic>.from((v ?? {}) as Map);
 
@@ -204,7 +205,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const HbLoader();
     if (_data == null) {
       return ListView(padding: const EdgeInsets.all(20), children: [
         const SizedBox(height: 80),

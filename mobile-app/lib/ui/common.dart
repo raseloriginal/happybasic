@@ -10,6 +10,7 @@ import '../core/offline.dart';
 import '../core/realtime.dart';
 import '../core/store.dart';
 import 'dkit.dart';
+import 'loader.dart';
 
 const kBlue = Color(0xFF1F4FE0);
 const kInk = Color(0xFF0A1640);
@@ -109,7 +110,7 @@ Future<bool> confirm(BuildContext context, String title, {String? body, String y
 
 /// Runs [task] with a blocking spinner, shows API errors as a toast. Returns null on failure.
 Future<T?> busy<T>(BuildContext context, Future<T> Function() task) async {
-  showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+  showDialog(context: context, barrierDismissible: false, builder: (_) => const HbLoader());
   try {
     return await task();
   } on ApiException catch (e) {
@@ -167,7 +168,9 @@ class AsyncBodyState extends State<AsyncBody> {
   @override
   void initState() {
     super.initState();
-    _run();
+    // The start-up loader stays until this first load has finished (or failed).
+    AppStart.pending++;
+    _run().whenComplete(() => AppStart.pending--);
     _sync = OfflineQueue.instance.onSynced.listen((_) => _run(silent: true));
     // Live events (new order, delivery done...), app resume and the 1-minute fallback refresh the screen quietly.
     _live = Realtime.instance.events.listen((_) => _run(silent: true));
@@ -206,7 +209,7 @@ class AsyncBodyState extends State<AsyncBody> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const HbLoader();
     if (_data == null) {
       return ListView(padding: widget.padding, children: [
         const SizedBox(height: 80),
