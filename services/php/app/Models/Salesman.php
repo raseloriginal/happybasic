@@ -56,6 +56,7 @@ final class Salesman
             'dealer_profit_share' => $isDealer && $r['dealer_profit_share'] !== null ? (float) $r['dealer_profit_share'] : null,
             'partner_profit_share' => $isDealer && $r['partner_profit_share'] !== null ? (float) $r['partner_profit_share'] : null,
             'status' => Format::status($r['status']),
+            'daily_target' => (float) ($r['daily_target'] ?? 0),
         ];
     }
 
@@ -166,8 +167,8 @@ final class Salesman
             self::syncLink($db, $d);
             $userId = User::createAccount($d['name'], $d['phone'], $d['password'], 'sr', $d['status']);
             $db->execute(
-                'INSERT INTO salesmen (partner_id, company_id, user_id, name, phone, joining_date, status) VALUES (?, ?, ?, ?, ?, CURDATE(), ?)',
-                [$d['partner_id'], $d['company_id'], $userId, $d['name'], $d['phone'], $d['status']]
+                'INSERT INTO salesmen (partner_id, company_id, user_id, name, phone, joining_date, status, daily_target) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?)',
+                [$d['partner_id'], $d['company_id'], $userId, $d['name'], $d['phone'], $d['status'], $d['daily_target']]
             );
 
             return self::findOrFail((int) $db->lastInsertId());
@@ -184,8 +185,8 @@ final class Salesman
             self::syncLink($db, $d, $id);
             User::syncAccount((int) $current['user_id'], $d['name'], $d['phone'], $d['status'], $d['password'] ?? null);
             $db->execute(
-                'UPDATE salesmen SET partner_id = ?, company_id = ?, name = ?, phone = ?, status = ? WHERE id = ?',
-                [$d['partner_id'], $d['company_id'], $d['name'], $d['phone'], $d['status'], $id]
+                'UPDATE salesmen SET partner_id = ?, company_id = ?, name = ?, phone = ?, status = ?, daily_target = ? WHERE id = ?',
+                [$d['partner_id'], $d['company_id'], $d['name'], $d['phone'], $d['status'], $d['daily_target'], $id]
             );
 
             return self::findOrFail($id);

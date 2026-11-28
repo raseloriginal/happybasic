@@ -115,6 +115,7 @@
                 $('sr_name').value = s ? s.name : '';
                 $('sr_number').value = s ? s.number : '';
                 $('sr_status').value = s ? s.status : 'Active';
+                $('sr_daily_target').value = s?.daily_target || '';
                 syncOwnership();
             },
         });

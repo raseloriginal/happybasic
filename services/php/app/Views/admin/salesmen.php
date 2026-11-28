@@ -173,6 +173,12 @@
                 </div>
 
                 <div class="form-group span-2">
+                    <label for="sr_daily_target">Daily Target (৳)</label>
+                    <input id="sr_daily_target" name="daily_target" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 50000">
+                    <small class="muted">Daily order value target. Leave empty for no target.</small>
+                </div>
+
+                <div class="form-group span-2">
                     <div class="label-row">
                         <label for="sr_password">Account Password <span class="req" data-pw-required>*</span></label>
                         <button type="button" class="text-link small" data-gen-pw="sr_password">Generate</button>
